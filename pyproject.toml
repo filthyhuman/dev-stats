@@ -1,0 +1,120 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dev-stats"
+version = "0.1.0"
+description = "Repository analysis tool — code metrics, Git exploration, branch management, self-contained HTML dashboard."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "dev-stats contributors" }]
+keywords = ["git", "statistics", "analysis", "dashboard", "ci", "code-quality", "metrics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Typing :: Typed",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.7",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "jinja2>=3.1",
+    "gitpython>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "pytest-mock>=3.14",
+    "freezegun>=1.5",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+    "types-jinja2",
+]
+
+[project.scripts]
+dev-stats = "dev_stats.cli.app:app"
+
+[project.urls]
+Homepage   = "https://github.com/your-org/dev-stats"
+Repository = "https://github.com/your-org/dev-stats"
+Issues     = "https://github.com/your-org/dev-stats/issues"
+Changelog  = "https://github.com/your-org/dev-stats/CHANGELOG.md"
+Docs       = "https://github.com/your-org/dev-stats/tree/main/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dev_stats"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/", "tests/", "docs/", "planning/", "CLAUDE.md", "README.md", "CHANGELOG.md", "LICENSE"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E","W","F","I","B","C4","UP","ANN","D","SIM","TCH","RUF","PT","N"]
+ignore = ["D100","D104"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["dev_stats"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_any_generics = true
+no_implicit_reexport = true
+show_error_codes = true
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["git.*", "freezegun.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--tb=short", "-q"]
+markers = [
+    "unit: pure unit tests, no filesystem or subprocess",
+    "integration: tests requiring real git repo on disk",
+    "slow: tests taking more than 5 seconds",
+]
+
+[tool.coverage.run]
+source = ["dev_stats"]
+branch = true
+omit = ["tests/*", "src/dev_stats/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+]

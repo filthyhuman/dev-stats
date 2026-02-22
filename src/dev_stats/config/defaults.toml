@@ -1,0 +1,38 @@
+# dev-stats default configuration
+# Override any value via a project-local .dev-stats.toml or DEV_STATS_* env vars.
+
+[thresholds]
+max_file_lines = 500
+max_function_lines = 50
+max_cyclomatic_complexity = 10
+max_cognitive_complexity = 15
+max_parameters = 5
+max_nesting_depth = 4
+max_class_methods = 20
+max_class_lines = 300
+max_imports = 15
+min_maintainability_index = 20.0
+max_duplication_pct = 5.0
+max_coupling = 10
+max_churn_rate = 0.5
+max_commit_size = 500
+min_test_coverage = 80.0
+
+[output]
+top_n = 20
+filenames = false
+compress_dashboard_json = true
+
+[branches]
+default_target = "main"
+protected_patterns = ["main", "master", "develop", "release/*"]
+stale_days = 30
+abandoned_days = 90
+min_deletability_score = 70.0
+
+[gitlog]
+max_commits = 0
+blame_top_files = 10
+include_diffs = true
+follow_renames = true
+max_dashboard_mb = 5.0
