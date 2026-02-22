@@ -379,6 +379,63 @@ class LanguageSummary:
 
 
 @dataclass(frozen=True)
+class DiffLine:
+    """A single line from a unified diff.
+
+    Attributes:
+        content: The line text (without +/- prefix).
+        line_type: One of ``"add"``, ``"delete"``, or ``"context"``.
+        old_lineno: Line number in the old file (``None`` for additions).
+        new_lineno: Line number in the new file (``None`` for deletions).
+    """
+
+    content: str
+    line_type: str
+    old_lineno: int | None = None
+    new_lineno: int | None = None
+
+
+@dataclass(frozen=True)
+class DiffHunk:
+    """A hunk from a unified diff.
+
+    Attributes:
+        old_start: Start line in the old file.
+        old_count: Number of lines from the old file.
+        new_start: Start line in the new file.
+        new_count: Number of lines from the new file.
+        header: The ``@@`` header line text.
+        lines: Individual diff lines in the hunk.
+    """
+
+    old_start: int
+    old_count: int
+    new_start: int
+    new_count: int
+    header: str = ""
+    lines: tuple[DiffLine, ...] = ()
+
+
+@dataclass(frozen=True)
+class TreeEntry:
+    """An entry from ``git ls-tree``.
+
+    Attributes:
+        mode: File mode (e.g. ``"100644"``).
+        entry_type: Object type (``"blob"``, ``"tree"``, ``"commit"``).
+        sha: Object SHA.
+        path: Repository-relative path.
+        size: Object size in bytes (``-1`` for trees/submodules).
+    """
+
+    mode: str
+    entry_type: str
+    sha: str
+    path: str
+    size: int = -1
+
+
+@dataclass(frozen=True)
 class FileChange:
     """A single file change within a commit.
 

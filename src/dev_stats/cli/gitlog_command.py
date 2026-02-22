@@ -1,16 +1,24 @@
 """The ``gitlog`` sub-command."""
 
+import logging
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.table import Table
+
+from dev_stats.core.git.commit_enricher import CommitEnricher
+from dev_stats.core.git.log_harvester import LogHarvester
+
+logger = logging.getLogger(__name__)
 
 
 class GitlogCommand:
     """Typer command that analyses the Git log of a repository.
 
-    Skeleton implementation -- body is a no-op until the git subsystem is wired.
+    Harvests commit records, enriches them with metadata, and displays
+    a summary table in the terminal.
     """
 
     def __call__(
@@ -47,5 +55,63 @@ class GitlogCommand:
             config: Optional TOML config file path.
         """
         console = Console()
-        console.print(f"[bold]dev-stats gitlog[/bold] -- target: {repo}")
-        console.print("[dim]Git-log analysis not yet implemented.[/dim]")
+        repo_path = repo.resolve()
+
+        try:
+            harvester = LogHarvester(repo_path=repo_path)
+            commits = harvester.harvest(
+                max_commits=max_commits,
+                since=since,
+            )
+
+            if not commits:
+                console.print("[yellow]No commits found.[/yellow]")
+                return
+
+            enricher = CommitEnricher()
+            enriched = enricher.enrich(commits)
+
+            # Summary
+            console.print(
+                f"[bold]dev-stats gitlog[/bold] -- {len(commits)} commits from {repo_path.name}"
+            )
+
+            # Branch info
+            branch = harvester.current_branch()
+            console.print(f"[dim]Branch:[/dim] {branch}")
+
+            # Commit type breakdown
+            merges = sum(1 for e in enriched if e.is_merge)
+            reverts = sum(1 for e in enriched if e.is_revert)
+            fixups = sum(1 for e in enriched if e.is_fixup)
+            console.print(f"[dim]Merges: {merges} | Reverts: {reverts} | Fixups: {fixups}[/dim]")
+
+            # Top commits by churn
+            table = Table(title="Recent Commits")
+            table.add_column("SHA", style="cyan", max_width=8)
+            table.add_column("Author")
+            table.add_column("Date")
+            table.add_column("+/-", justify="right")
+            table.add_column("Size")
+            table.add_column("Subject", max_width=50)
+
+            for ec in enriched[:20]:
+                c = ec.commit
+                table.add_row(
+                    c.sha[:8],
+                    c.author_name,
+                    c.authored_date.strftime("%Y-%m-%d"),
+                    f"+{c.insertions}/-{c.deletions}",
+                    ec.size_category.value,
+                    c.message.split("\n", 1)[0][:50],
+                )
+
+            console.print(table)
+
+        except FileNotFoundError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
+        except Exception:
+            logger.exception("Gitlog analysis failed")
+            console.print("[red]Gitlog analysis failed. See log for details.[/red]")
+            raise typer.Exit(code=1) from None
