@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dev_stats.core.parsers.generic_parser import GenericParser
+from dev_stats.core.parsers.python_parser import PythonParser
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -20,7 +21,7 @@ class ParserRegistry:
     """
 
     def __init__(self) -> None:
-        """Initialise an empty registry with a ``GenericParser`` fallback."""
+        """Initialise a registry with built-in parsers and a generic fallback."""
         self._registry: dict[str, AbstractParser] = {}
         self._generic = GenericParser()
 
@@ -68,3 +69,14 @@ class ParserRegistry:
         for ext, parser in self._registry.items():
             languages.setdefault(parser.language, []).append(ext)
         return languages
+
+
+def create_default_registry() -> ParserRegistry:
+    """Create a :class:`ParserRegistry` with all built-in parsers registered.
+
+    Returns:
+        A registry with Python and Generic parsers.
+    """
+    registry = ParserRegistry()
+    registry.register(PythonParser())
+    return registry

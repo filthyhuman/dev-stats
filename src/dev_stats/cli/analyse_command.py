@@ -1,17 +1,26 @@
 """The ``analyse`` sub-command."""
 
+import logging
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from rich.console import Console
 
+from dev_stats.config.analysis_config import AnalysisConfig
+from dev_stats.core.aggregator import Aggregator
+from dev_stats.core.dispatcher import Dispatcher
+from dev_stats.core.parser_registry import create_default_registry
+from dev_stats.core.scanner import Scanner
+from dev_stats.output.exporters.terminal_reporter import TerminalReporter
+
+logger = logging.getLogger(__name__)
+
 
 class AnalyseCommand:
     """Typer command that analyses a repository and reports code metrics.
 
-    All CLI flags are declared here. The body is a no-op placeholder until
-    the core pipeline is wired in.
+    Runs the full pipeline: Scanner -> Dispatcher -> Aggregator -> Reporter.
     """
 
     def __call__(
@@ -84,5 +93,45 @@ class AnalyseCommand:
             since: Date filter for commits.
         """
         console = Console()
-        console.print(f"[bold]dev-stats analyse[/bold] -- target: {repo}")
-        console.print("[dim]Analysis pipeline not yet implemented.[/dim]")
+        repo_path = repo.resolve()
+
+        try:
+            analysis_config = AnalysisConfig.load(
+                config_path=config,
+                repo_path=repo_path,
+                exclude_patterns=tuple(exclude) if exclude else None,
+                languages=tuple(lang) if lang else None,
+            )
+            if top != 20:
+                analysis_config = analysis_config.model_copy(
+                    update={"output": analysis_config.output.model_copy(update={"top_n": top})}
+                )
+
+            # Scan
+            scanner = Scanner(repo_path=repo_path, config=analysis_config)
+            paths = list(scanner.scan())
+
+            # Parse
+            registry = create_default_registry()
+            dispatcher = Dispatcher(registry=registry, repo_root=repo_path)
+            file_reports = dispatcher.parse_many(paths)
+
+            # Aggregate
+            aggregator = Aggregator()
+            report = aggregator.aggregate(files=file_reports, repo_root=repo_path)
+
+            # Report
+            reporter = TerminalReporter(
+                report=report,
+                config=analysis_config,
+                console=console,
+            )
+            reporter.export(output_dir=repo_path)
+
+        except FileNotFoundError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
+        except Exception:
+            logger.exception("Analysis failed")
+            console.print("[red]Analysis failed. See log for details.[/red]")
+            raise typer.Exit(code=1) from None
