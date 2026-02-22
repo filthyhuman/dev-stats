@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
+from dev_stats.core.metrics.coupling_analyser import CouplingAnalyser
 from dev_stats.core.models import (
     FileReport,
     LanguageSummary,
@@ -15,33 +16,55 @@ from dev_stats.core.models import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from dev_stats.core.models import (
+        CommitRecord,
+        CouplingReport,
+        CoverageReport,
+        DuplicationReport,
+        FileChurn,
+    )
+
 
 class Aggregator:
     """Builds a :class:`RepoReport` from a list of :class:`FileReport` objects.
 
-    Computes totals, averages, per-language summaries, and per-module
-    groupings.
+    Computes totals, averages, per-language summaries, per-module
+    groupings, and optional metrics (duplication, coupling, coverage, churn).
     """
 
     def aggregate(
         self,
         files: list[FileReport],
         repo_root: Path,
+        *,
+        duplication: DuplicationReport | None = None,
+        coverage: CoverageReport | None = None,
+        commits: list[CommitRecord] | None = None,
     ) -> RepoReport:
         """Aggregate file reports into a single repository report.
 
         Args:
             files: Individual file analysis results.
             repo_root: Absolute path to the repository root.
+            duplication: Pre-computed duplication report.
+            coverage: Pre-computed coverage report.
+            commits: Commit records for churn scoring.
 
         Returns:
             A frozen :class:`RepoReport`.
         """
+        coupling = self._compute_coupling(files)
+        churn = self._compute_churn(commits) if commits else None
+
         return RepoReport(
             root=repo_root,
             files=tuple(files),
             modules=self._compute_module_reports(files),
             languages=self._compute_language_summaries(files),
+            duplication=duplication,
+            coupling=coupling,
+            coverage=coverage,
+            file_churn=tuple(churn) if churn else None,
         )
 
     @staticmethod
@@ -103,3 +126,35 @@ class Aggregator:
             )
 
         return tuple(sorted(modules, key=lambda m: m.name))
+
+    @staticmethod
+    def _compute_coupling(files: list[FileReport]) -> CouplingReport:
+        """Compute coupling metrics from file imports.
+
+        Args:
+            files: File reports with import data.
+
+        Returns:
+            A ``CouplingReport``.
+        """
+        analyser = CouplingAnalyser()
+        return analyser.analyse(files)
+
+    @staticmethod
+    def _compute_churn(
+        commits: list[CommitRecord] | None,
+    ) -> list[FileChurn] | None:
+        """Compute per-file churn from commit records.
+
+        Args:
+            commits: Commit records with file changes.
+
+        Returns:
+            List of ``FileChurn`` or ``None`` if no commits.
+        """
+        if not commits:
+            return None
+        from dev_stats.core.metrics.churn_scorer import ChurnScorer
+
+        scorer = ChurnScorer()
+        return scorer.score(commits)

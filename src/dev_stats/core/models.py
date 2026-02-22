@@ -217,6 +217,126 @@ class FileReport:
         return len(self.functions)
 
 
+# ---------------------------------------------------------------------------
+# Metrics dataclasses
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DuplicateBlock:
+    """A pair of duplicated code blocks.
+
+    Attributes:
+        file_a: Path of the first file.
+        file_b: Path of the second file.
+        line_a: Start line in file A.
+        line_b: Start line in file B.
+        length: Number of duplicated lines.
+    """
+
+    file_a: str
+    file_b: str
+    line_a: int
+    line_b: int
+    length: int
+
+
+@dataclass(frozen=True)
+class DuplicationReport:
+    """Duplication analysis results for the entire repository.
+
+    Attributes:
+        duplicates: Detected duplicate blocks.
+        total_duplicated_lines: Total duplicated line count.
+        duplication_ratio: Duplicated lines / total code lines.
+    """
+
+    duplicates: tuple[DuplicateBlock, ...] = ()
+    total_duplicated_lines: int = 0
+    duplication_ratio: float = 0.0
+
+
+@dataclass(frozen=True)
+class ModuleCoupling:
+    """Coupling metrics for a single module.
+
+    Attributes:
+        name: Module name.
+        afferent: Afferent coupling (Ca) - modules that depend on this one.
+        efferent: Efferent coupling (Ce) - modules this one depends on.
+        instability: Instability I = Ce / (Ca + Ce).
+        abstractness: Abstractness A = abstract classes / total classes.
+        distance: Distance from main sequence D = |A + I - 1|.
+    """
+
+    name: str
+    afferent: int = 0
+    efferent: int = 0
+    instability: float = 0.0
+    abstractness: float = 0.0
+    distance: float = 0.0
+
+
+@dataclass(frozen=True)
+class CouplingReport:
+    """Coupling analysis results for the repository.
+
+    Attributes:
+        modules: Per-module coupling metrics.
+    """
+
+    modules: tuple[ModuleCoupling, ...] = ()
+
+
+@dataclass(frozen=True)
+class FileCoverage:
+    """Coverage data for a single file.
+
+    Attributes:
+        path: File path.
+        covered_lines: Number of covered lines.
+        total_lines: Total coverable lines.
+        coverage_ratio: Covered / total.
+    """
+
+    path: str
+    covered_lines: int = 0
+    total_lines: int = 0
+    coverage_ratio: float = 0.0
+
+
+@dataclass(frozen=True)
+class CoverageReport:
+    """Test coverage results for the repository.
+
+    Attributes:
+        files: Per-file coverage.
+        overall_ratio: Overall coverage ratio.
+    """
+
+    files: tuple[FileCoverage, ...] = ()
+    overall_ratio: float = 0.0
+
+
+@dataclass(frozen=True)
+class FileChurn:
+    """Churn score for a single file.
+
+    Attributes:
+        path: File path.
+        commit_count: Number of commits touching this file.
+        insertions: Total lines inserted.
+        deletions: Total lines deleted.
+        churn_score: insertions + deletions.
+    """
+
+    path: str
+    commit_count: int = 0
+    insertions: int = 0
+    deletions: int = 0
+    churn_score: int = 0
+
+
 @dataclass(frozen=True)
 class ModuleReport:
     """Aggregated report for a directory (module).
@@ -559,6 +679,10 @@ class RepoReport:
         files: Per-file analysis reports.
         modules: Per-directory module reports.
         languages: Per-language summaries.
+        duplication: Duplication analysis results.
+        coupling: Coupling analysis results.
+        coverage: Test coverage results.
+        file_churn: Per-file churn scores.
         commits: Raw commit records (``None`` if git analysis skipped).
         enriched_commits: Enriched commit records.
         branches_report: Branch analysis report.
@@ -572,6 +696,10 @@ class RepoReport:
     files: tuple[FileReport, ...] = ()
     modules: tuple[ModuleReport, ...] = ()
     languages: tuple[LanguageSummary, ...] = ()
+    duplication: DuplicationReport | None = None
+    coupling: CouplingReport | None = None
+    coverage: CoverageReport | None = None
+    file_churn: tuple[FileChurn, ...] | None = None
     commits: tuple[CommitRecord, ...] | None = None
     enriched_commits: tuple[EnrichedCommit, ...] | None = None
     branches_report: BranchesReport | None = None
