@@ -1,8 +1,11 @@
 """The ``analyse`` sub-command."""
 
+from __future__ import annotations
+
 import logging
+import subprocess
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from rich.console import Console
@@ -10,7 +13,6 @@ from rich.console import Console
 from dev_stats.config.analysis_config import AnalysisConfig
 from dev_stats.core.aggregator import Aggregator
 from dev_stats.core.dispatcher import Dispatcher
-from dev_stats.core.models import RepoReport
 from dev_stats.core.parser_registry import create_default_registry
 from dev_stats.core.scanner import Scanner
 from dev_stats.output.exporters.badge_generator import BadgeGenerator
@@ -18,6 +20,10 @@ from dev_stats.output.exporters.csv_exporter import CsvExporter
 from dev_stats.output.exporters.json_exporter import JsonExporter
 from dev_stats.output.exporters.terminal_reporter import TerminalReporter
 from dev_stats.output.exporters.xml_exporter import XmlExporter
+
+if TYPE_CHECKING:
+    from dev_stats.ci.abstract_ci_adapter import AbstractCIAdapter
+    from dev_stats.core.models import RepoReport
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +114,7 @@ class AnalyseCommand:
         """
         console = Console()
         repo_path = repo.resolve()
+        _fail_exit = False
 
         try:
             analysis_config = AnalysisConfig.load(
@@ -156,6 +163,46 @@ class AnalyseCommand:
                 for p in created:
                     console.print(f"  [green]wrote[/green] {p}")
 
+            # CI adapter
+            if ci is not None or fail_on_violations:
+                adapter = self._create_ci_adapter(
+                    name=ci or "github",
+                    report=report,
+                    config=analysis_config,
+                )
+                adapter.check_violations()
+
+                # Delta mode: filter to changed files only
+                if diff is not None:
+                    diff_files = self._get_diff_files(repo_path, diff)
+                    adapter._violations = tuple(
+                        v
+                        for v in adapter.violations
+                        if not v.file_path or v.file_path in diff_files
+                    )
+
+                if ci is not None:
+                    console.print(adapter.emit(), markup=False, highlight=False)
+                    ci_output_dir = output if output is not None else repo_path / "dev-stats-output"
+                    created_ci = adapter.write_report(ci_output_dir)
+                    for p in created_ci:
+                        console.print(f"  [green]wrote[/green] {p}")
+
+                if fail_on_violations and adapter.violations:
+                    from dev_stats.ci.violation import ViolationSeverity
+
+                    error_count = sum(
+                        1 for v in adapter.violations if v.severity == ViolationSeverity.ERROR
+                    )
+                    warn_count = sum(
+                        1 for v in adapter.violations if v.severity == ViolationSeverity.WARNING
+                    )
+                    console.print(
+                        f"[red]Quality gate failed:[/red] "
+                        f"{error_count} error(s), {warn_count} warning(s)"
+                    )
+                    _fail_exit = True
+
         except FileNotFoundError as exc:
             console.print(f"[red]Error:[/red] {exc}")
             raise typer.Exit(code=1) from exc
@@ -163,6 +210,9 @@ class AnalyseCommand:
             logger.exception("Analysis failed")
             console.print("[red]Analysis failed. See log for details.[/red]")
             raise typer.Exit(code=1) from None
+
+        if _fail_exit:
+            raise typer.Exit(code=1)
 
     @staticmethod
     def _run_exporters(
@@ -210,3 +260,62 @@ class AnalyseCommand:
             created.extend(badge_gen.export(output_dir))
 
         return created
+
+    @staticmethod
+    def _create_ci_adapter(
+        name: str,
+        report: RepoReport,
+        config: AnalysisConfig,
+    ) -> AbstractCIAdapter:
+        """Create a CI adapter by name.
+
+        Args:
+            name: Adapter name (jenkins, gitlab, teamcity, github).
+            report: The analysis report.
+            config: Analysis configuration.
+
+        Returns:
+            Concrete CI adapter instance.
+
+        Raises:
+            ValueError: If *name* is not a recognised adapter.
+        """
+        from dev_stats.ci.github_actions_adapter import GithubActionsAdapter
+        from dev_stats.ci.gitlab_adapter import GitlabAdapter
+        from dev_stats.ci.jenkins_adapter import JenkinsAdapter
+        from dev_stats.ci.teamcity_adapter import TeamCityAdapter
+
+        adapters: dict[str, type[AbstractCIAdapter]] = {
+            "jenkins": JenkinsAdapter,
+            "gitlab": GitlabAdapter,
+            "teamcity": TeamCityAdapter,
+            "github": GithubActionsAdapter,
+        }
+
+        adapter_cls = adapters.get(name)
+        if adapter_cls is None:
+            msg = f"Unknown CI adapter: {name!r}. Choose from: {', '.join(sorted(adapters))}"
+            raise ValueError(msg)
+
+        return adapter_cls(report=report, config=config)
+
+    @staticmethod
+    def _get_diff_files(repo_path: Path, base_ref: str) -> set[str]:
+        """Get files changed between *base_ref* and HEAD.
+
+        Args:
+            repo_path: Path to the Git repository.
+            base_ref: Base branch or commit reference.
+
+        Returns:
+            Set of changed file paths (relative to repo root).
+        """
+        result = subprocess.run(
+            ["git", "diff", "--name-only", base_ref],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(repo_path),
+        )
+        return {line.strip() for line in result.stdout.splitlines() if line.strip()}
