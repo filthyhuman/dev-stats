@@ -668,22 +668,28 @@ class ContributorProfile:
     Attributes:
         name: Author display name.
         email: Author email.
+        aliases: Alternative emails for the same person.
         commit_count: Total commits.
         first_commit_date: Earliest commit timestamp.
         last_commit_date: Latest commit timestamp.
         insertions: Total lines inserted.
         deletions: Total lines deleted.
         files_touched: Number of unique files modified.
+        survival_rate: Fraction of authored lines still present (0.0-1.0).
+        active_days: Number of distinct days with commits.
     """
 
     name: str
     email: str
-    commit_count: int
-    first_commit_date: datetime
-    last_commit_date: datetime
-    insertions: int
-    deletions: int
-    files_touched: int
+    aliases: tuple[str, ...] = ()
+    commit_count: int = 0
+    first_commit_date: datetime | None = None
+    last_commit_date: datetime | None = None
+    insertions: int = 0
+    deletions: int = 0
+    files_touched: int = 0
+    survival_rate: float = 0.0
+    active_days: int = 0
 
 
 @dataclass(frozen=True)
@@ -695,12 +701,108 @@ class TagRecord:
         sha: Commit SHA the tag points to.
         date: Tag or commit date.
         message: Tag message, or ``None`` for lightweight tags.
+        is_annotated: Whether this is an annotated tag.
     """
 
     name: str
     sha: str
     date: datetime
     message: str | None = None
+    is_annotated: bool = False
+
+
+@dataclass(frozen=True)
+class SemverTag:
+    """A tag parsed as a semantic version.
+
+    Attributes:
+        tag: The underlying tag record.
+        major: Major version number.
+        minor: Minor version number.
+        patch: Patch version number.
+        prerelease: Pre-release label (e.g. ``"rc.1"``), or empty.
+    """
+
+    tag: TagRecord
+    major: int
+    minor: int
+    patch: int
+    prerelease: str = ""
+
+
+@dataclass(frozen=True)
+class StashRecord:
+    """A Git stash entry.
+
+    Attributes:
+        index: Stash index (e.g. 0 for ``stash@{0}``).
+        message: Stash message.
+        date: Stash creation date.
+    """
+
+    index: int
+    message: str
+    date: datetime
+
+
+@dataclass(frozen=True)
+class WorktreeRecord:
+    """A Git worktree entry.
+
+    Attributes:
+        path: Filesystem path to the worktree.
+        head_sha: SHA of the HEAD commit.
+        branch: Branch name, or ``None`` if detached.
+    """
+
+    path: str
+    head_sha: str
+    branch: str | None = None
+
+
+@dataclass(frozen=True)
+class NoteRecord:
+    """A Git note attached to a commit.
+
+    Attributes:
+        commit_sha: The commit the note is attached to.
+        message: Note content.
+    """
+
+    commit_sha: str
+    message: str
+
+
+@dataclass(frozen=True)
+class WorkPattern:
+    """Temporal work pattern for a contributor.
+
+    Attributes:
+        author_email: Contributor email.
+        hour_distribution: Commit count per hour (0-23).
+        weekday_distribution: Commit count per weekday (0=Mon, 6=Sun).
+        timezone: Most common timezone offset string.
+    """
+
+    author_email: str
+    hour_distribution: tuple[int, ...] = ()
+    weekday_distribution: tuple[int, ...] = ()
+    timezone: str = "+0000"
+
+
+@dataclass(frozen=True)
+class TimelinePoint:
+    """A single data point on a timeline series.
+
+    Attributes:
+        date: Date of the data point.
+        value: Numeric value.
+        label: Optional label (e.g. language name).
+    """
+
+    date: datetime
+    value: int
+    label: str = ""
 
 
 @dataclass(frozen=True)
@@ -747,6 +849,10 @@ class RepoReport:
         tags: Repository tags.
         patterns: Detected anomalies/patterns.
         blame_reports: Per-file blame reports.
+        timeline: LOC timeline data points.
+        work_patterns: Per-contributor work patterns.
+        semver_tags: Parsed semantic-version tags.
+        stashes: Stash entries.
     """
 
     root: Path
@@ -764,3 +870,7 @@ class RepoReport:
     tags: tuple[TagRecord, ...] | None = None
     patterns: tuple[DetectedPattern, ...] | None = None
     blame_reports: tuple[FileBlameReport, ...] | None = field(default=None)
+    timeline: tuple[TimelinePoint, ...] | None = None
+    work_patterns: tuple[WorkPattern, ...] | None = None
+    semver_tags: tuple[SemverTag, ...] | None = None
+    stashes: tuple[StashRecord, ...] | None = None

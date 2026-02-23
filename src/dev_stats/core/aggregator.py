@@ -17,11 +17,21 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from dev_stats.core.models import (
+        BranchesReport,
         CommitRecord,
+        ContributorProfile,
         CouplingReport,
         CoverageReport,
+        DetectedPattern,
         DuplicationReport,
+        EnrichedCommit,
+        FileBlameReport,
         FileChurn,
+        SemverTag,
+        StashRecord,
+        TagRecord,
+        TimelinePoint,
+        WorkPattern,
     )
 
 
@@ -40,6 +50,16 @@ class Aggregator:
         duplication: DuplicationReport | None = None,
         coverage: CoverageReport | None = None,
         commits: list[CommitRecord] | None = None,
+        enriched_commits: list[EnrichedCommit] | None = None,
+        branches_report: BranchesReport | None = None,
+        contributors: list[ContributorProfile] | None = None,
+        tags: list[TagRecord] | None = None,
+        patterns: list[DetectedPattern] | None = None,
+        blame_reports: list[FileBlameReport] | None = None,
+        timeline: list[TimelinePoint] | None = None,
+        work_patterns: list[WorkPattern] | None = None,
+        semver_tags: list[SemverTag] | None = None,
+        stashes: list[StashRecord] | None = None,
     ) -> RepoReport:
         """Aggregate file reports into a single repository report.
 
@@ -49,6 +69,16 @@ class Aggregator:
             duplication: Pre-computed duplication report.
             coverage: Pre-computed coverage report.
             commits: Commit records for churn scoring.
+            enriched_commits: Enriched commit records.
+            branches_report: Branch analysis report.
+            contributors: Contributor profiles.
+            tags: Repository tags.
+            patterns: Detected anomalies/patterns.
+            blame_reports: Per-file blame reports.
+            timeline: LOC timeline data points.
+            work_patterns: Per-contributor work patterns.
+            semver_tags: Parsed semantic-version tags.
+            stashes: Stash entries.
 
         Returns:
             A frozen :class:`RepoReport`.
@@ -65,6 +95,17 @@ class Aggregator:
             coupling=coupling,
             coverage=coverage,
             file_churn=tuple(churn) if churn else None,
+            commits=tuple(commits) if commits else None,
+            enriched_commits=tuple(enriched_commits) if enriched_commits else None,
+            branches_report=branches_report,
+            contributors=tuple(contributors) if contributors else None,
+            tags=tuple(tags) if tags else None,
+            patterns=tuple(patterns) if patterns else None,
+            blame_reports=tuple(blame_reports) if blame_reports else None,
+            timeline=tuple(timeline) if timeline else None,
+            work_patterns=tuple(work_patterns) if work_patterns else None,
+            semver_tags=tuple(semver_tags) if semver_tags else None,
+            stashes=tuple(stashes) if stashes else None,
         )
 
     @staticmethod
