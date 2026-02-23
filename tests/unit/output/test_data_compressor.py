@@ -8,9 +8,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dev_stats.core.models import (
+    AnomalySeverity,
+    CommitRecord,
+    ContributorProfile,
+    CouplingReport,
+    CoverageReport,
+    DetectedPattern,
+    DuplicationReport,
+    EnrichedCommit,
+    FileChurn,
     FileReport,
     LanguageSummary,
     RepoReport,
+    TagRecord,
+    TimelinePoint,
 )
 from dev_stats.output.dashboard.data_compressor import DataCompressor
 
@@ -106,6 +117,63 @@ class TestDataCompressorCompress:
         assert "commits" not in chunks
         assert "branches" not in chunks
         assert "contributors" not in chunks
+
+    def test_compress_report_optional_fields(self) -> None:
+        """Optional report fields produce corresponding chunks."""
+        dt = datetime(2024, 6, 15, 10, 0, 0, tzinfo=UTC)
+        commit = CommitRecord(
+            sha="a" * 40,
+            author_name="Dev",
+            author_email="dev@test.com",
+            authored_date=dt,
+            committer_name="Dev",
+            committer_email="dev@test.com",
+            committed_date=dt,
+            message="msg",
+        )
+        report = RepoReport(
+            root=Path("/tmp/repo"),
+            files=(
+                FileReport(
+                    path=Path("a.py"),
+                    language="python",
+                    total_lines=10,
+                    code_lines=8,
+                    blank_lines=1,
+                    comment_lines=1,
+                ),
+            ),
+            duplication=DuplicationReport(duplication_ratio=0.05),
+            coupling=CouplingReport(),
+            coverage=CoverageReport(overall_ratio=0.9),
+            file_churn=(FileChurn(path="a.py", commit_count=5),),
+            commits=(commit,),
+            enriched_commits=(EnrichedCommit(commit=commit),),
+            contributors=(ContributorProfile(name="Dev", email="dev@test.com"),),
+            tags=(TagRecord(name="v1.0", sha="b" * 40, date=dt),),
+            patterns=(
+                DetectedPattern(
+                    name="test",
+                    description="test pattern",
+                    severity=AnomalySeverity.LOW,
+                ),
+            ),
+            timeline=(TimelinePoint(date=dt, value=100, label="loc"),),
+        )
+
+        compressor = DataCompressor()
+        chunks = compressor.compress_report(report)
+
+        assert "duplication" in chunks
+        assert "coupling" in chunks
+        assert "coverage" in chunks
+        assert "churn" in chunks
+        assert "commits" in chunks
+        assert "enriched_commits" in chunks
+        assert "contributors" in chunks
+        assert "tags" in chunks
+        assert "patterns" in chunks
+        assert "timeline" in chunks
 
 
 class TestDataCompressorDecompress:

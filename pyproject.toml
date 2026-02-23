@@ -48,11 +48,11 @@ dev = [
 dev-stats = "dev_stats.cli.app:app"
 
 [project.urls]
-Homepage   = "https://github.com/your-org/dev-stats"
-Repository = "https://github.com/your-org/dev-stats"
-Issues     = "https://github.com/your-org/dev-stats/issues"
-Changelog  = "https://github.com/your-org/dev-stats/CHANGELOG.md"
-Docs       = "https://github.com/your-org/dev-stats/tree/main/docs"
+Homepage   = "https://github.com/filthyhuman/dev-stats"
+Repository = "https://github.com/filthyhuman/dev-stats"
+Issues     = "https://github.com/filthyhuman/dev-stats/issues"
+Changelog  = "https://github.com/filthyhuman/dev-stats/CHANGELOG.md"
+Docs       = "https://github.com/filthyhuman/dev-stats/tree/main/docs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dev_stats"]

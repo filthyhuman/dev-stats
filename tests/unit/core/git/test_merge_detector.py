@@ -95,3 +95,63 @@ class TestMergeDetectorSquash:
         detector = MergeDetector(repo_path=Path("/tmp/fake"))
 
         assert detector.is_squash_merged("feature", "main") is False
+
+    @patch("dev_stats.core.git.merge_detector.subprocess.run")
+    def test_squash_merge_matched(self, mock_run: MagicMock) -> None:
+        """Squash merge detected when tree matches target commit."""
+        merge_base_sha = "abc123"
+        branch_tree = "tree_sha_123"
+        mock_run.side_effect = [
+            MagicMock(stdout=f"{merge_base_sha}\n"),  # merge-base
+            MagicMock(stdout=f"{branch_tree}\n"),  # merge-tree
+            MagicMock(stdout=f"other_tree\n{branch_tree}\n"),  # log --format=%T
+        ]
+        detector = MergeDetector(repo_path=Path("/tmp/fake"))
+
+        assert detector.is_squash_merged("feature", "main") is True
+
+    @patch("dev_stats.core.git.merge_detector.subprocess.run")
+    def test_squash_merge_no_match(self, mock_run: MagicMock) -> None:
+        """Not squash merged when tree does not match any target commit."""
+        mock_run.side_effect = [
+            MagicMock(stdout="abc123\n"),  # merge-base
+            MagicMock(stdout="branch_tree\n"),  # merge-tree
+            MagicMock(stdout="other1\nother2\n"),  # log --format=%T
+        ]
+        detector = MergeDetector(repo_path=Path("/tmp/fake"))
+
+        assert detector.is_squash_merged("feature", "main") is False
+
+    @patch("dev_stats.core.git.merge_detector.subprocess.run")
+    def test_squash_merge_empty_tree(self, mock_run: MagicMock) -> None:
+        """Returns False when merge-tree output is empty."""
+        mock_run.side_effect = [
+            MagicMock(stdout="abc123\n"),  # merge-base
+            MagicMock(stdout="\n"),  # merge-tree (empty)
+        ]
+        detector = MergeDetector(repo_path=Path("/tmp/fake"))
+
+        assert detector.is_squash_merged("feature", "main") is False
+
+    @patch("dev_stats.core.git.merge_detector.subprocess.run")
+    def test_squash_merge_tree_error(self, mock_run: MagicMock) -> None:
+        """Returns False when merge-tree command fails."""
+        mock_run.side_effect = [
+            MagicMock(stdout="abc123\n"),  # merge-base
+            subprocess.CalledProcessError(1, "git"),  # merge-tree
+        ]
+        detector = MergeDetector(repo_path=Path("/tmp/fake"))
+
+        assert detector.is_squash_merged("feature", "main") is False
+
+    @patch("dev_stats.core.git.merge_detector.subprocess.run")
+    def test_squash_merge_log_error(self, mock_run: MagicMock) -> None:
+        """Returns False when log command fails."""
+        mock_run.side_effect = [
+            MagicMock(stdout="abc123\n"),  # merge-base
+            MagicMock(stdout="branch_tree\n"),  # merge-tree
+            subprocess.CalledProcessError(1, "git"),  # log
+        ]
+        detector = MergeDetector(repo_path=Path("/tmp/fake"))
+
+        assert detector.is_squash_merged("feature", "main") is False

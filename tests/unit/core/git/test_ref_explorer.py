@@ -205,3 +205,106 @@ class TestRefExplorerNotes:
         assert len(notes) == 1
         assert notes[0].commit_sha == "abc123"
         assert notes[0].message == "This is a note"
+
+
+class TestRefExplorerErrorPaths:
+    """Tests for error handling in all list methods."""
+
+    @patch("dev_stats.core.git.ref_explorer.subprocess.run")
+    def test_tags_error_returns_empty(self, mock_run: MagicMock) -> None:
+        """CalledProcessError in list_tags returns empty list."""
+        import subprocess
+
+        mock_run.side_effect = subprocess.CalledProcessError(1, "git")
+        explorer = RefExplorer(repo_path=Path("/tmp/fake"))
+        assert explorer.list_tags() == []
+
+    @patch("dev_stats.core.git.ref_explorer.subprocess.run")
+    def test_stashes_error_returns_empty(self, mock_run: MagicMock) -> None:
+        """CalledProcessError in list_stashes returns empty list."""
+        import subprocess
+
+        mock_run.side_effect = subprocess.CalledProcessError(1, "git")
+        explorer = RefExplorer(repo_path=Path("/tmp/fake"))
+        assert explorer.list_stashes() == []
+
+    @patch("dev_stats.core.git.ref_explorer.subprocess.run")
+    def test_worktrees_error_returns_empty(self, mock_run: MagicMock) -> None:
+        """CalledProcessError in list_worktrees returns empty list."""
+        import subprocess
+
+        mock_run.side_effect = subprocess.CalledProcessError(1, "git")
+        explorer = RefExplorer(repo_path=Path("/tmp/fake"))
+        assert explorer.list_worktrees() == []
+
+    @patch("dev_stats.core.git.ref_explorer.subprocess.run")
+    def test_notes_error_returns_empty(self, mock_run: MagicMock) -> None:
+        """CalledProcessError in list_notes returns empty list."""
+        import subprocess
+
+        mock_run.side_effect = subprocess.CalledProcessError(1, "git")
+        explorer = RefExplorer(repo_path=Path("/tmp/fake"))
+        assert explorer.list_notes() == []
+
+    @patch("dev_stats.core.git.ref_explorer.subprocess.run")
+    def test_notes_show_error_empty_message(self, mock_run: MagicMock) -> None:
+        """CalledProcessError in notes show returns empty message."""
+        import subprocess
+
+        mock_run.side_effect = [
+            MagicMock(stdout="note_sha abc123\n"),
+            subprocess.CalledProcessError(1, "git"),
+        ]
+        explorer = RefExplorer(repo_path=Path("/tmp/fake"))
+        notes = explorer.list_notes()
+        assert len(notes) == 1
+        assert notes[0].message == ""
+
+    @patch("dev_stats.core.git.ref_explorer.subprocess.run")
+    def test_tag_missing_fields_skipped(self, mock_run: MagicMock) -> None:
+        """Tag lines with fewer than 4 fields are skipped."""
+        mock_run.return_value = MagicMock(stdout="incomplete\x00data\n")
+        explorer = RefExplorer(repo_path=Path("/tmp/fake"))
+        tags = explorer.list_tags()
+        assert len(tags) == 0
+
+    @patch("dev_stats.core.git.ref_explorer.subprocess.run")
+    def test_worktree_multiple_entries(self, mock_run: MagicMock) -> None:
+        """Multiple worktrees are all parsed."""
+        mock_run.return_value = MagicMock(
+            stdout=(
+                "worktree /repo/main\n"
+                "HEAD abc123\n"
+                "branch refs/heads/main\n"
+                "\n"
+                "worktree /repo/feature\n"
+                "HEAD def456\n"
+                "branch refs/heads/feature\n"
+                "\n"
+            )
+        )
+        explorer = RefExplorer(repo_path=Path("/tmp/fake"))
+        worktrees = explorer.list_worktrees()
+        assert len(worktrees) == 2
+        assert worktrees[0].branch == "main"
+        assert worktrees[1].branch == "feature"
+
+
+class TestRefExplorerParseDate:
+    """Tests for _parse_date edge cases."""
+
+    def test_empty_date_string(self) -> None:
+        """Empty date string returns epoch."""
+        result = RefExplorer._parse_date("")
+        assert result.year == 1970
+
+    def test_unparseable_date(self) -> None:
+        """Invalid date string returns epoch."""
+        result = RefExplorer._parse_date("not-a-date")
+        assert result.year == 1970
+
+    def test_iso_date_parsed(self) -> None:
+        """ISO date string is parsed correctly."""
+        result = RefExplorer._parse_date("2024-06-15T10:30:00+00:00")
+        assert result.year == 2024
+        assert result.month == 6

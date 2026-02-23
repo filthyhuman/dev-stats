@@ -71,6 +71,49 @@ class TestGenericParserLanguageDetection:
         report = _parse_source("data\n", "test.xyz")
         assert report.language == "generic"
 
+    def test_makefile_detected(self) -> None:
+        """Makefiles are detected by name."""
+        report = _parse_source("all:\n\techo build\n", "Makefile")
+        assert report.language == "makefile"
+
+    def test_dockerfile_detected(self) -> None:
+        """Dockerfiles are detected by name."""
+        report = _parse_source("FROM python:3.12\n", "Dockerfile")
+        assert report.language == "dockerfile"
+
+
+class TestGenericParserProperties:
+    """Tests for parser properties."""
+
+    def test_language_name(self) -> None:
+        """Language name is 'generic'."""
+        parser = GenericParser()
+        assert parser.language_name == "generic"
+
+    def test_supported_extensions(self) -> None:
+        """Supported extensions is empty (fallback parser)."""
+        parser = GenericParser()
+        assert parser.supported_extensions == ()
+
+
+class TestGenericParserPrivateMethods:
+    """Tests for private extract methods (no-op implementations)."""
+
+    def test_extract_classes_empty(self) -> None:
+        """Returns empty list (no structural analysis)."""
+        parser = GenericParser()
+        assert parser._extract_classes("", Path("x")) == []
+
+    def test_extract_functions_empty(self) -> None:
+        """Returns empty list (no structural analysis)."""
+        parser = GenericParser()
+        assert parser._extract_functions("", Path("x")) == []
+
+    def test_detect_imports_empty(self) -> None:
+        """Returns empty list (no import detection)."""
+        parser = GenericParser()
+        assert parser._detect_imports("") == []
+
 
 class TestGenericParserCanParse:
     """Tests for can_parse behaviour."""

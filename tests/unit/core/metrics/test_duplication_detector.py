@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from dev_stats.core.metrics.duplication_detector import DuplicationDetector
+from dev_stats.core.models import FileReport
 
 
 class TestDuplicationDetector:
@@ -73,3 +76,77 @@ class TestDuplicationDetector:
         }
         report = detector.detect_from_sources(sources)
         assert len(report.duplicates) >= 1
+
+
+class TestDuplicationDetectorDetect:
+    """Tests for the detect() method that reads from filesystem."""
+
+    def test_detect_with_absolute_paths(self) -> None:
+        """detect() reads files from absolute paths."""
+        tmp = Path("/tmp/_dev_stats_test_dup_detect")
+        tmp.mkdir(parents=True, exist_ok=True)
+        block = "\n".join(f"dup_line_{i}" for i in range(8))
+        (tmp / "a.py").write_text(f"unique_a\n{block}\nfooter_a\n")
+        (tmp / "b.py").write_text(f"unique_b\n{block}\nfooter_b\n")
+
+        files = [
+            FileReport(
+                path=tmp / "a.py",
+                language="python",
+                total_lines=10,
+                code_lines=10,
+                blank_lines=0,
+                comment_lines=0,
+            ),
+            FileReport(
+                path=tmp / "b.py",
+                language="python",
+                total_lines=10,
+                code_lines=10,
+                blank_lines=0,
+                comment_lines=0,
+            ),
+        ]
+        detector = DuplicationDetector(min_lines=6)
+        report = detector.detect(files)
+        assert len(report.duplicates) >= 1
+        assert report.duplication_ratio > 0.0
+
+    def test_detect_skips_relative_paths(self) -> None:
+        """detect() skips files with relative paths."""
+        files = [
+            FileReport(
+                path=Path("relative/a.py"),
+                language="python",
+                total_lines=10,
+                code_lines=10,
+                blank_lines=0,
+                comment_lines=0,
+            ),
+        ]
+        detector = DuplicationDetector(min_lines=3)
+        report = detector.detect(files)
+        assert len(report.duplicates) == 0
+
+    def test_detect_handles_missing_file(self) -> None:
+        """detect() handles OSError for non-existent files gracefully."""
+        files = [
+            FileReport(
+                path=Path("/tmp/_dev_stats_nonexistent_12345/missing.py"),
+                language="python",
+                total_lines=10,
+                code_lines=10,
+                blank_lines=0,
+                comment_lines=0,
+            ),
+        ]
+        detector = DuplicationDetector(min_lines=3)
+        report = detector.detect(files)
+        assert len(report.duplicates) == 0
+
+    def test_detect_empty_files_list(self) -> None:
+        """detect() with empty files list returns zero ratio."""
+        detector = DuplicationDetector(min_lines=3)
+        report = detector.detect([])
+        assert report.duplication_ratio == 0.0
+        assert report.total_duplicated_lines == 0

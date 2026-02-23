@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 from dev_stats.core.git.tree_walker import TreeWalker
 
 _SAMPLE_LS_TREE = """\
@@ -78,3 +81,55 @@ class TestTreeWalkerSubmodules:
         submodules = [e for e in entries if e.entry_type == "commit"]
         assert len(submodules) == 1
         assert submodules[0].path == "vendor/lib"
+
+
+class TestTreeWalkerWalk:
+    """Tests for walk() method using mocked subprocess."""
+
+    @patch("dev_stats.core.git.tree_walker.subprocess.run")
+    def test_walk_returns_entries(self, mock_run: MagicMock) -> None:
+        """walk() calls git ls-tree and parses output."""
+        mock_run.return_value = MagicMock(stdout=_SAMPLE_LS_TREE)
+        walker = TreeWalker(repo_path=Path("/tmp/fake"))
+        entries = walker.walk("HEAD")
+
+        assert len(entries) == 5
+        assert entries[0].path == "src/main.py"
+
+    @patch("dev_stats.core.git.tree_walker.subprocess.run")
+    def test_walk_default_ref(self, mock_run: MagicMock) -> None:
+        """walk() defaults to HEAD ref."""
+        mock_run.return_value = MagicMock(stdout="")
+        walker = TreeWalker(repo_path=Path("/tmp/fake"))
+        walker.walk()
+
+        args = mock_run.call_args[0][0]
+        assert "HEAD" in args
+
+    @patch("dev_stats.core.git.tree_walker.subprocess.run")
+    def test_directory_sizes_aggregated(self, mock_run: MagicMock) -> None:
+        """directory_sizes() aggregates sizes per directory."""
+        mock_run.return_value = MagicMock(stdout=_SAMPLE_LS_TREE)
+        walker = TreeWalker(repo_path=Path("/tmp/fake"))
+        sizes = walker.directory_sizes()
+
+        assert sizes["src"] == 350
+        assert sizes["(root)"] == 50
+        assert sizes["scripts"] == 100
+
+    @patch("dev_stats.core.git.tree_walker.subprocess.run")
+    def test_submodules_method(self, mock_run: MagicMock) -> None:
+        """submodules() returns only commit-type entries."""
+        mock_run.return_value = MagicMock(stdout=_SAMPLE_LS_TREE)
+        walker = TreeWalker(repo_path=Path("/tmp/fake"))
+        subs = walker.submodules()
+
+        assert len(subs) == 1
+        assert subs[0].path == "vendor/lib"
+
+    @patch("dev_stats.core.git.tree_walker.subprocess.run")
+    def test_walk_empty_output(self, mock_run: MagicMock) -> None:
+        """walk() with empty output returns empty list."""
+        mock_run.return_value = MagicMock(stdout="")
+        walker = TreeWalker(repo_path=Path("/tmp/fake"))
+        assert walker.walk() == []

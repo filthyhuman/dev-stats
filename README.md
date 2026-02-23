@@ -8,7 +8,7 @@
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-checked-blue)](https://mypy-lang.org/)
-[![CI](https://github.com/your-org/dev-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/dev-stats/actions)
+[![CI](https://github.com/filthyhuman/dev-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/filthyhuman/dev-stats/actions)
 
 ---
 
@@ -43,7 +43,7 @@ uv tool install dev-stats
 pip install dev-stats
 
 # from source
-git clone https://github.com/your-org/dev-stats
+git clone https://github.com/filthyhuman/dev-stats
 cd dev-stats
 uv sync --all-extras
 ```
