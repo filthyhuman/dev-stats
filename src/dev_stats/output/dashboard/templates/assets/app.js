@@ -7,6 +7,7 @@
  * - FilterBar: live search/filter for table rows
  * - TabManager: tab switching with URL hash state
  * - DataLoader: decompresses embedded zlib/base64 data chunks
+ * - LazyRenderer: populates tab content on first activation
  */
 
 /* ------------------------------------------------------------------ */
@@ -178,6 +179,9 @@ class TabManager {
 
     // Update URL hash without scrolling
     history.replaceState(null, "", `#${tabId}`);
+
+    // Trigger lazy rendering for the activated panel
+    LazyRenderer.renderIfNeeded(tabId);
   }
 
   /** Handle hash changes. */
@@ -290,16 +294,406 @@ class DataLoader {
 }
 
 /* ------------------------------------------------------------------ */
+/* LazyRenderer                                                       */
+/* ------------------------------------------------------------------ */
+
+class LazyRenderer {
+  /** Track which panels have been rendered. */
+  static _rendered = new Set();
+
+  /** Cached data chunks, loaded on demand. */
+  static _data = null;
+
+  /**
+   * Render a tab panel's dynamic content on first activation.
+   * Subsequent activations are no-ops.
+   * @param {string} panelId  The tab panel ID
+   */
+  static async renderIfNeeded(panelId) {
+    if (LazyRenderer._rendered.has(panelId)) return;
+
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+
+    // Only process panels marked as lazy
+    if (panel.dataset.lazy !== "true") return;
+
+    LazyRenderer._rendered.add(panelId);
+
+    // Load data on first render
+    if (!LazyRenderer._data) {
+      LazyRenderer._data = await DataLoader.loadAll();
+    }
+    const data = LazyRenderer._data;
+
+    // Dispatch to the correct renderer
+    const renderers = {
+      "tab-files": () => LazyRenderer._renderFiles(data),
+      "tab-classes": () => LazyRenderer._renderClasses(data),
+      "tab-methods": () => LazyRenderer._renderMethods(data),
+      "tab-hotspots": () => LazyRenderer._renderHotspots(data),
+      "tab-dependencies": () => LazyRenderer._renderDependencies(data),
+      "tab-branches": () => LazyRenderer._renderBranches(data),
+      "tab-git": () => LazyRenderer._renderGit(data),
+      "tab-quality": () => LazyRenderer._renderQuality(data),
+    };
+
+    const renderer = renderers[panelId];
+    if (renderer) {
+      try {
+        await renderer();
+        LazyRenderer._initWidgets(panel);
+      } catch (e) {
+        console.error("Lazy render failed for", panelId, e);
+      }
+    }
+  }
+
+  /**
+   * Initialise TableSorter and FilterBar widgets inside a panel
+   * after its content has been rendered.
+   * @param {HTMLElement} panel
+   */
+  static _initWidgets(panel) {
+    panel.querySelectorAll(".data-table").forEach((table) => {
+      new TableSorter(table);
+    });
+
+    panel.querySelectorAll("[data-filter-table]").forEach((input) => {
+      const tableId = input.dataset.filterTable;
+      const table = document.getElementById(tableId);
+      const countEl = document.querySelector(
+        `[data-filter-count="${tableId}"]`
+      );
+      if (table) {
+        new FilterBar(input, table, countEl);
+      }
+    });
+  }
+
+  /**
+   * Helper to create a table row from cell values.
+   * @param {Array} cells  Cell values
+   * @param {Array} [classes]  CSS classes per cell (optional)
+   * @returns {HTMLTableRowElement}
+   */
+  static _makeRow(cells, classes) {
+    const tr = document.createElement("tr");
+    cells.forEach((val, i) => {
+      const td = document.createElement("td");
+      td.textContent = val != null ? String(val) : "";
+      if (classes && classes[i]) td.className = classes[i];
+      tr.appendChild(td);
+    });
+    return tr;
+  }
+
+  /** Render the Files tab from data chunks. */
+  static _renderFiles(data) {
+    const files = data.files;
+    if (!files) return;
+    const tbody = document.getElementById("table-files-body");
+    if (!tbody) return;
+
+    const cls = [null, null, "num", "num", "num", "num"];
+    files.forEach((f) => {
+      const numClasses = f.classes ? f.classes.length : 0;
+      const numFuncs = f.functions ? f.functions.length : 0;
+      tbody.appendChild(
+        LazyRenderer._makeRow(
+          [f.path, f.language, f.total_lines, f.code_lines, numClasses, numFuncs],
+          cls
+        )
+      );
+    });
+  }
+
+  /** Render the Classes tab from data chunks. */
+  static _renderClasses(data) {
+    const files = data.files;
+    if (!files) return;
+    const tbody = document.getElementById("table-classes-body");
+    if (!tbody) return;
+
+    const cls = [null, null, "num", "num", "num"];
+    files.forEach((f) => {
+      if (!f.classes) return;
+      f.classes.forEach((c) => {
+        const numAttrs = c.attributes ? c.attributes.length : 0;
+        const numMethods = c.methods ? c.methods.length : 0;
+        tbody.appendChild(
+          LazyRenderer._makeRow(
+            [c.name, f.path, c.lines, numMethods, numAttrs],
+            cls
+          )
+        );
+      });
+    });
+  }
+
+  /** Render the Methods tab from data chunks. */
+  static _renderMethods(data) {
+    const files = data.files;
+    if (!files) return;
+    const tbody = document.getElementById("table-methods-body");
+    if (!tbody) return;
+
+    const cls = [null, null, "num", "num", "num"];
+    files.forEach((f) => {
+      const methods = [];
+      if (f.functions) {
+        f.functions.forEach((fn) => methods.push(fn));
+      }
+      if (f.classes) {
+        f.classes.forEach((c) => {
+          if (c.methods) c.methods.forEach((m) => methods.push(m));
+        });
+      }
+      methods.forEach((m) => {
+        const params = m.parameters ? m.parameters.length : 0;
+        tbody.appendChild(
+          LazyRenderer._makeRow(
+            [m.name, f.path, m.lines, m.cyclomatic_complexity, params],
+            cls
+          )
+        );
+      });
+    });
+  }
+
+  /** Render the Hotspots tab from data chunks. */
+  static _renderHotspots(data) {
+    const churn = data.churn;
+    if (!churn) return;
+    const tbody = document.getElementById("table-hotspots-body");
+    if (!tbody) return;
+
+    const cls = [null, "num", "num", "num", "num"];
+    churn.forEach((c) => {
+      tbody.appendChild(
+        LazyRenderer._makeRow(
+          [c.path, c.commit_count, c.churn_score, c.insertions, c.deletions],
+          cls
+        )
+      );
+    });
+  }
+
+  /** Render the Dependencies tab from data chunks. */
+  static _renderDependencies(data) {
+    const coupling = data.coupling;
+    if (!coupling || !coupling.modules) return;
+    const tbody = document.getElementById("table-coupling-body");
+    if (!tbody) return;
+
+    const cls = [null, "num", "num", "num", "num", "num"];
+    coupling.modules.forEach((m) => {
+      tbody.appendChild(
+        LazyRenderer._makeRow(
+          [
+            m.name,
+            m.afferent,
+            m.efferent,
+            m.instability.toFixed(2),
+            m.abstractness.toFixed(2),
+            m.distance.toFixed(2),
+          ],
+          cls
+        )
+      );
+    });
+  }
+
+  /** Render the Branches tab from data chunks. */
+  static _renderBranches(data) {
+    const branches = data.branches;
+    if (!branches || !branches.branches) return;
+
+    const allBody = document.getElementById("table-branches-body");
+    const mergedBody = document.getElementById("table-branches-merged-body");
+    const unmergedBody = document.getElementById("table-branches-unmerged-body");
+
+    branches.branches.forEach((b) => {
+      const merged = b.merge_status && b.merge_status.is_merged;
+
+      if (allBody) {
+        allBody.appendChild(
+          LazyRenderer._makeRow([
+            b.name,
+            b.status,
+            b.author_name,
+            b.last_commit_date,
+            b.commits_ahead,
+            b.commits_behind,
+            b.deletability_category,
+          ])
+        );
+      }
+
+      if (merged && mergedBody) {
+        const mergeType = b.merge_status.merge_type || "merge_commit";
+        mergedBody.appendChild(
+          LazyRenderer._makeRow([b.name, b.author_name, b.last_commit_date, mergeType])
+        );
+      }
+
+      if (!merged && unmergedBody) {
+        unmergedBody.appendChild(
+          LazyRenderer._makeRow([
+            b.name,
+            b.status,
+            b.author_name,
+            b.last_commit_date,
+            b.commits_ahead,
+          ])
+        );
+      }
+    });
+  }
+
+  /** Render the Git tab (commits, contributors, tags, patterns). */
+  static _renderGit(data) {
+    // Commits
+    const commits = data.commits;
+    const commitsBody = document.getElementById("table-commits-body");
+    if (commits && commitsBody) {
+      commits.forEach((c) => {
+        const sha = c.sha ? c.sha.substring(0, 8) : "";
+        const msg = c.message ? c.message.split("\n")[0] : "";
+        commitsBody.appendChild(
+          LazyRenderer._makeRow(
+            [sha, c.author_name, c.authored_date, msg, c.insertions, c.deletions],
+            [null, null, null, null, "num", "num"]
+          )
+        );
+      });
+    }
+
+    // Contributors
+    const contributors = data.contributors;
+    const contribBody = document.getElementById("table-contributors-body");
+    if (contributors && contribBody) {
+      const cls = [null, null, "num", "num", "num", "num"];
+      contributors.forEach((c) => {
+        contribBody.appendChild(
+          LazyRenderer._makeRow(
+            [c.name, c.email, c.commit_count, c.insertions, c.deletions, c.files_touched],
+            cls
+          )
+        );
+      });
+    }
+
+    // Tags
+    const tags = data.tags;
+    const tagsBody = document.getElementById("table-tags-body");
+    if (tags && tagsBody) {
+      tags.forEach((t) => {
+        const sha = t.sha ? t.sha.substring(0, 8) : "";
+        tagsBody.appendChild(
+          LazyRenderer._makeRow([t.name, sha, t.date, t.message || ""])
+        );
+      });
+    }
+
+    // Patterns
+    const patterns = data.patterns;
+    const patternsBody = document.getElementById("table-patterns-body");
+    if (patterns && patternsBody) {
+      patterns.forEach((p) => {
+        patternsBody.appendChild(
+          LazyRenderer._makeRow([p.name, p.severity, p.description, p.evidence])
+        );
+      });
+    }
+  }
+
+  /** Render the Quality Gates tab from data chunks. */
+  static _renderQuality(data) {
+    // Duplication
+    const dup = data.duplication;
+    const dupBody = document.getElementById("table-duplication-body");
+    if (dup && dup.duplicates && dupBody) {
+      const cls = [null, null, "num", "num", "num"];
+      dup.duplicates.forEach((d) => {
+        dupBody.appendChild(
+          LazyRenderer._makeRow(
+            [d.file_a, d.file_b, d.line_a, d.line_b, d.length],
+            cls
+          )
+        );
+      });
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Sidebar navigation                                                 */
+/* ------------------------------------------------------------------ */
+
+class SidebarNav {
+  /**
+   * Wire sidebar links to tab panel activation.
+   * Syncs the active sidebar link with the visible panel.
+   */
+  constructor() {
+    this.links = Array.from(document.querySelectorAll(".sidebar__link[data-tab]"));
+    this.panels = Array.from(document.querySelectorAll(".tab-panel"));
+
+    this.links.forEach((link) => {
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.activate(link.dataset.tab);
+      });
+    });
+
+    // Activate from hash on load
+    const hash = location.hash.slice(1);
+    if (hash && this.links.some((l) => l.dataset.tab === hash)) {
+      this.activate(hash);
+    }
+
+    // Listen for hash changes
+    window.addEventListener("hashchange", () => {
+      const h = location.hash.slice(1);
+      if (h) this.activate(h);
+    });
+  }
+
+  /**
+   * Activate a panel and update the sidebar.
+   * @param {string} panelId
+   */
+  activate(panelId) {
+    // Update sidebar links
+    this.links.forEach((l) =>
+      l.classList.toggle("sidebar__link--active", l.dataset.tab === panelId)
+    );
+
+    // Show/hide panels
+    this.panels.forEach((p) =>
+      p.classList.toggle("tab-panel--active", p.id === panelId)
+    );
+
+    // Update URL hash
+    history.replaceState(null, "", `#${panelId}`);
+
+    // Trigger lazy rendering
+    LazyRenderer.renderIfNeeded(panelId);
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Initialisation                                                     */
 /* ------------------------------------------------------------------ */
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Auto-initialise TableSorters
+  // Auto-initialise TableSorters for statically-rendered tables
   document.querySelectorAll(".data-table").forEach((table) => {
     new TableSorter(table);
   });
 
-  // Auto-initialise FilterBars
+  // Auto-initialise FilterBars for statically-rendered tables
   document.querySelectorAll("[data-filter-table]").forEach((input) => {
     const tableId = input.dataset.filterTable;
     const table = document.getElementById(tableId);
@@ -311,8 +705,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Auto-initialise TabManagers
+  // Auto-initialise TabManagers (for sub-tabs like branch, git)
   document.querySelectorAll(".tabs").forEach((container) => {
     new TabManager(`#${container.id}`);
   });
+
+  // Initialise sidebar navigation
+  new SidebarNav();
 });

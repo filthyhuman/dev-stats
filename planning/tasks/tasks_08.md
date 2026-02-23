@@ -36,4 +36,4 @@ Derived from planning/sprints/sprint_08.md.
 - [x] `uv run ruff format .` passes
 - [x] `uv run mypy src/ --strict` passes
 - [x] `uv run pytest` passes (all tests green)
-- [ ] Commit & push
+- [x] Commit & push
