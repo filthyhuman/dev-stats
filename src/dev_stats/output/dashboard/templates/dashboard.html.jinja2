@@ -30,7 +30,10 @@
   <main class="main">
     <header class="header">
       <h1 class="header__title">{{ repo_name }}</h1>
-      <span class="header__path" title="{{ repo_path }}">{{ repo_path }}</span>
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <span class="header__path" title="{{ repo_path }}">{{ repo_path }}</span>
+        <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">&#9790;</button>
+      </div>
     </header>
 
     <!-- ============================================================ -->
@@ -306,6 +309,8 @@
           <div class="card__value">{{ branch_count }}</div>
         </div>
       </div>
+
+      <button class="btn" id="copy-safe-deletes" title="Copy git branch -d commands for safe-to-delete branches">Copy safe deletes</button>
 
       <!-- Sub-tabs for branch views -->
       <div class="tabs" id="branch-tabs">

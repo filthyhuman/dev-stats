@@ -3,11 +3,17 @@
  *
  * Client-side JavaScript for the self-contained HTML dashboard.
  * Provides:
- * - TableSorter: click-to-sort on any data table
+ * - TableSorter: click-to-sort on any data table with URL hash state
  * - FilterBar: live search/filter for table rows
  * - TabManager: tab switching with URL hash state
  * - DataLoader: decompresses embedded zlib/base64 data chunks
  * - LazyRenderer: populates tab content on first activation
+ * - VirtualScroller: renders only visible rows for large tables
+ * - ThemeToggle: dark/light mode with localStorage persistence
+ * - CopyDeleteScript: copies git branch -d commands to clipboard
+ * - BlameHeatMap: age-based colour scale for blame lines
+ * - CommitGraph: canvas-based commit graph with zoom/pan
+ * - ActivityHeatmap: 52-week contribution calendar
  */
 
 /* ------------------------------------------------------------------ */
@@ -25,17 +31,22 @@ class TableSorter {
     this.headers = Array.from(table.querySelectorAll("thead th"));
     this.currentCol = -1;
     this.ascending = true;
+    this.tableId = table.id || "";
 
     this.headers.forEach((th, index) => {
       th.addEventListener("click", () => this.sort(index));
     });
+
+    // Restore sort from URL hash
+    this._restoreFromHash();
   }
 
   /**
    * Sort the table by the given column index.
    * @param {number} colIndex
+   * @param {boolean} [updateHash=true]  Whether to update the URL hash
    */
-  sort(colIndex) {
+  sort(colIndex, updateHash = true) {
     if (this.currentCol === colIndex) {
       this.ascending = !this.ascending;
     } else {
@@ -72,6 +83,11 @@ class TableSorter {
 
     // Re-append rows in sorted order
     rows.forEach((row) => this.tbody.appendChild(row));
+
+    // Persist sort state in URL hash
+    if (updateHash && this.tableId) {
+      this._saveToHash(colIndex, this.ascending);
+    }
   }
 
   /**
@@ -97,6 +113,38 @@ class TableSorter {
         return text.toLowerCase() === "true" ? 1 : 0;
       default:
         return text.toLowerCase();
+    }
+  }
+
+  /**
+   * Save sort state to URL hash.
+   * @param {number} colIndex
+   * @param {boolean} ascending
+   */
+  _saveToHash(colIndex, ascending) {
+    const params = new URLSearchParams(location.hash.slice(1));
+    params.set("sort", `${this.tableId}:${colIndex}:${ascending ? "asc" : "desc"}`);
+    history.replaceState(null, "", `#${params.toString()}`);
+  }
+
+  /** Restore sort state from URL hash. */
+  _restoreFromHash() {
+    if (!this.tableId) return;
+    const params = new URLSearchParams(location.hash.slice(1));
+    const sort = params.get("sort");
+    if (!sort) return;
+
+    const parts = sort.split(":");
+    if (parts.length >= 3 && parts[0] === this.tableId) {
+      const colIndex = parseInt(parts[1], 10);
+      const dir = parts[2];
+      if (colIndex >= 0 && colIndex < this.headers.length) {
+        this.ascending = dir !== "desc";
+        this.currentCol = colIndex;
+        // Invert so sort() flips it back
+        this.ascending = !this.ascending;
+        this.sort(colIndex, false);
+      }
     }
   }
 }
@@ -205,6 +253,11 @@ class DataLoader {
    *
    * Looks for <script type="application/x-devstats-data"> elements
    * whose data-chunk attribute names the chunk.
+   *
+   * Fallback chain:
+   * 1. DecompressionStream (modern browsers)
+   * 2. pako (if bundled)
+   * 3. Uncompressed JSON (if data is not compressed)
    */
 
   /**
@@ -219,14 +272,20 @@ class DataLoader {
     if (!script) return null;
 
     try {
-      const base64 = script.textContent.trim();
-      const binary = atob(base64);
+      const raw = script.textContent.trim();
+
+      // Try parsing as raw JSON first (uncompressed fallback)
+      if (raw.startsWith("{") || raw.startsWith("[")) {
+        return JSON.parse(raw);
+      }
+
+      const binary = atob(raw);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) {
         bytes[i] = binary.charCodeAt(i);
       }
 
-      // Use DecompressionStream if available, else fallback
+      // Use DecompressionStream if available
       if (typeof DecompressionStream !== "undefined") {
         const ds = new DecompressionStream("deflate");
         const writer = ds.writable.getWriter();
@@ -264,6 +323,14 @@ class DataLoader {
         return JSON.parse(text);
       }
 
+      // Last resort: try decoding as UTF-8 text directly
+      try {
+        const text = new TextDecoder().decode(bytes);
+        return JSON.parse(text);
+      } catch (_e) {
+        // Not valid JSON either
+      }
+
       console.warn("No decompression method available for chunk:", chunkName);
       return null;
     } catch (e) {
@@ -290,6 +357,93 @@ class DataLoader {
     }
 
     return data;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* VirtualScroller                                                    */
+/* ------------------------------------------------------------------ */
+
+class VirtualScroller {
+  /**
+   * Virtual scroll for tables with > 500 rows.
+   * Only renders visible rows + a buffer above/below the viewport.
+   *
+   * @param {HTMLTableElement} table  The table to virtualise
+   * @param {number} [rowHeight=28]   Estimated row height in px
+   * @param {number} [buffer=20]      Buffer rows above/below viewport
+   * @param {number} [threshold=500]  Min rows before enabling virtual scroll
+   */
+  constructor(table, rowHeight = 28, buffer = 20, threshold = 500) {
+    this.table = table;
+    this.tbody = table.querySelector("tbody");
+    if (!this.tbody) return;
+
+    this.allRows = Array.from(this.tbody.querySelectorAll("tr"));
+    if (this.allRows.length < threshold) return;
+
+    this.rowHeight = rowHeight;
+    this.buffer = buffer;
+    this.visibleStart = 0;
+    this.visibleEnd = 0;
+
+    this._setup();
+  }
+
+  /** Wrap the table in a scroll container and virtualise. */
+  _setup() {
+    // Wrap table in a scroll container
+    this.container = document.createElement("div");
+    this.container.className = "virtual-scroll";
+    this.table.parentNode.insertBefore(this.container, this.table);
+    this.container.appendChild(this.table);
+
+    // Create a spacer element for total height
+    this.spacer = document.createElement("div");
+    this.spacer.className = "virtual-scroll__spacer";
+    this.spacer.style.height = `${this.allRows.length * this.rowHeight}px`;
+    this.tbody.appendChild(this.spacer);
+
+    // Hide all rows initially
+    this.allRows.forEach((row) => { row.style.display = "none"; });
+
+    // Listen for scroll events
+    this.container.addEventListener("scroll", () => this._onScroll());
+
+    // Initial render
+    this._onScroll();
+  }
+
+  /** Handle scroll events — show/hide rows as needed. */
+  _onScroll() {
+    const scrollTop = this.container.scrollTop;
+    const viewportHeight = this.container.clientHeight;
+
+    const start = Math.max(0, Math.floor(scrollTop / this.rowHeight) - this.buffer);
+    const end = Math.min(
+      this.allRows.length,
+      Math.ceil((scrollTop + viewportHeight) / this.rowHeight) + this.buffer
+    );
+
+    if (start === this.visibleStart && end === this.visibleEnd) return;
+
+    // Hide previously visible rows outside new range
+    for (let i = this.visibleStart; i < this.visibleEnd; i++) {
+      if (i < start || i >= end) {
+        this.allRows[i].style.display = "none";
+      }
+    }
+
+    // Show new visible rows
+    for (let i = start; i < end; i++) {
+      this.allRows[i].style.display = "";
+    }
+
+    this.visibleStart = start;
+    this.visibleEnd = end;
+
+    // Position rows using padding on tbody
+    this.tbody.style.paddingTop = `${start * this.rowHeight}px`;
   }
 }
 
@@ -350,13 +504,14 @@ class LazyRenderer {
   }
 
   /**
-   * Initialise TableSorter and FilterBar widgets inside a panel
-   * after its content has been rendered.
+   * Initialise TableSorter, FilterBar, and VirtualScroller widgets
+   * inside a panel after its content has been rendered.
    * @param {HTMLElement} panel
    */
   static _initWidgets(panel) {
     panel.querySelectorAll(".data-table").forEach((table) => {
       new TableSorter(table);
+      new VirtualScroller(table);
     });
 
     panel.querySelectorAll("[data-filter-table]").forEach((input) => {
@@ -549,6 +704,9 @@ class LazyRenderer {
         );
       }
     });
+
+    // Initialise copy-safe-deletes button
+    CopyDeleteScript.init(branches.branches);
   }
 
   /** Render the Git tab (commits, contributors, tags, patterns). */
@@ -624,6 +782,353 @@ class LazyRenderer {
         );
       });
     }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* ThemeToggle                                                        */
+/* ------------------------------------------------------------------ */
+
+class ThemeToggle {
+  /** Storage key for persisted theme preference. */
+  static STORAGE_KEY = "devstats-theme";
+
+  /**
+   * Initialise the theme toggle button.
+   * @param {string} buttonId  ID of the toggle button element
+   */
+  constructor(buttonId) {
+    this.button = document.getElementById(buttonId);
+    if (!this.button) return;
+
+    // Restore saved preference
+    const saved = ThemeToggle._getSaved();
+    if (saved === "light") {
+      document.documentElement.classList.add("light");
+    }
+    this._updateIcon();
+
+    this.button.addEventListener("click", () => this.toggle());
+  }
+
+  /** Toggle between dark and light mode. */
+  toggle() {
+    document.documentElement.classList.toggle("light");
+    const isLight = document.documentElement.classList.contains("light");
+    ThemeToggle._save(isLight ? "light" : "dark");
+    this._updateIcon();
+  }
+
+  /** Update the button icon to reflect current theme. */
+  _updateIcon() {
+    if (!this.button) return;
+    const isLight = document.documentElement.classList.contains("light");
+    this.button.textContent = isLight ? "\u2600" : "\u263E";
+    this.button.title = isLight ? "Switch to dark mode" : "Switch to light mode";
+  }
+
+  /**
+   * Get saved theme preference.
+   * @returns {string|null}
+   */
+  static _getSaved() {
+    try {
+      return localStorage.getItem(ThemeToggle.STORAGE_KEY);
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  /**
+   * Save theme preference.
+   * @param {string} theme  "dark" or "light"
+   */
+  static _save(theme) {
+    try {
+      localStorage.setItem(ThemeToggle.STORAGE_KEY, theme);
+    } catch (_e) {
+      // localStorage may be unavailable
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* CopyDeleteScript                                                   */
+/* ------------------------------------------------------------------ */
+
+class CopyDeleteScript {
+  /**
+   * Build a multi-line shell script of `git branch -d` commands
+   * for safe-to-delete branches and copy to clipboard.
+   *
+   * @param {Array} branches  Branch data objects from the data chunk
+   */
+  static init(branches) {
+    const btn = document.getElementById("copy-safe-deletes");
+    if (!btn || !branches) return;
+
+    btn.addEventListener("click", () => {
+      const safeBranches = branches.filter(
+        (b) => b.deletability_category === "safe" && !b.is_remote
+      );
+
+      if (safeBranches.length === 0) {
+        btn.textContent = "No safe deletes";
+        btn.classList.add("btn--success");
+        setTimeout(() => {
+          btn.textContent = "Copy safe deletes";
+          btn.classList.remove("btn--success");
+        }, 2000);
+        return;
+      }
+
+      const script = safeBranches
+        .map((b) => `git branch -d '${b.name.replace(/'/g, "'\\''")}'`)
+        .join("\n");
+
+      navigator.clipboard.writeText(script).then(() => {
+        btn.textContent = `Copied ${safeBranches.length} commands`;
+        btn.classList.add("btn--success");
+        setTimeout(() => {
+          btn.textContent = "Copy safe deletes";
+          btn.classList.remove("btn--success");
+        }, 2000);
+      }).catch(() => {
+        btn.textContent = "Copy failed";
+        setTimeout(() => { btn.textContent = "Copy safe deletes"; }, 2000);
+      });
+    });
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* BlameHeatMap                                                       */
+/* ------------------------------------------------------------------ */
+
+class BlameHeatMap {
+  /**
+   * Assign age-based CSS classes to blame line elements.
+   *
+   * Thresholds (days since authoring):
+   * - fresh:   < 30 days
+   * - recent:  30–180 days
+   * - old:     180–365 days
+   * - ancient: > 365 days
+   *
+   * @param {HTMLElement} container  Element containing blame lines
+   * @param {Array} lines  Blame line data from data chunks
+   */
+  static apply(container, lines) {
+    if (!container || !lines) return;
+
+    const now = Date.now();
+    const DAY_MS = 86400000;
+
+    const lineEls = container.querySelectorAll("[data-blame-date]");
+    lineEls.forEach((el) => {
+      const dateStr = el.dataset.blameDate;
+      if (!dateStr) return;
+
+      const age = (now - new Date(dateStr).getTime()) / DAY_MS;
+      el.classList.remove(
+        "blame-age-fresh", "blame-age-recent", "blame-age-old", "blame-age-ancient"
+      );
+
+      if (age < 30) {
+        el.classList.add("blame-age-fresh");
+      } else if (age < 180) {
+        el.classList.add("blame-age-recent");
+      } else if (age < 365) {
+        el.classList.add("blame-age-old");
+      } else {
+        el.classList.add("blame-age-ancient");
+      }
+    });
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* CommitGraph                                                        */
+/* ------------------------------------------------------------------ */
+
+class CommitGraph {
+  /**
+   * Canvas-based commit graph with zoom and pan.
+   *
+   * @param {string} canvasId   ID of the canvas element
+   * @param {Array} commits     Commit data objects
+   */
+  constructor(canvasId, commits) {
+    this.canvas = document.getElementById(canvasId);
+    if (!this.canvas || !commits || commits.length === 0) return;
+
+    this.ctx = this.canvas.getContext("2d");
+    this.commits = commits;
+
+    // View state
+    this.offsetX = 0;
+    this.offsetY = 0;
+    this.scale = 1;
+
+    // Layout constants
+    this.nodeRadius = 4;
+    this.colWidth = 20;
+    this.rowHeight = 24;
+
+    // Setup canvas size
+    this.canvas.width = this.canvas.parentElement.clientWidth || 800;
+    this.canvas.height = 300;
+
+    // Event listeners for pan/zoom
+    this._dragging = false;
+    this._lastX = 0;
+    this._lastY = 0;
+
+    this.canvas.addEventListener("mousedown", (e) => this._onMouseDown(e));
+    this.canvas.addEventListener("mousemove", (e) => this._onMouseMove(e));
+    this.canvas.addEventListener("mouseup", () => this._onMouseUp());
+    this.canvas.addEventListener("mouseleave", () => this._onMouseUp());
+    this.canvas.addEventListener("wheel", (e) => this._onWheel(e), { passive: false });
+
+    this._render();
+  }
+
+  /** Render the commit graph onto the canvas. */
+  _render() {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.translate(this.offsetX, this.offsetY);
+    ctx.scale(this.scale, this.scale);
+
+    const nodeColor = getComputedStyle(document.documentElement)
+      .getPropertyValue("--color-primary").trim() || "#58a6ff";
+    const lineColor = getComputedStyle(document.documentElement)
+      .getPropertyValue("--color-border").trim() || "#30363d";
+
+    // Draw connecting lines
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 1.5;
+    for (let i = 1; i < this.commits.length; i++) {
+      const x = this.colWidth;
+      const y1 = (i - 1) * this.rowHeight + this.rowHeight / 2;
+      const y2 = i * this.rowHeight + this.rowHeight / 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y1);
+      ctx.lineTo(x, y2);
+      ctx.stroke();
+    }
+
+    // Draw commit nodes
+    ctx.fillStyle = nodeColor;
+    for (let i = 0; i < this.commits.length; i++) {
+      const x = this.colWidth;
+      const y = i * this.rowHeight + this.rowHeight / 2;
+      ctx.beginPath();
+      ctx.arc(x, y, this.nodeRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw SHA + message label
+      const c = this.commits[i];
+      const sha = c.sha ? c.sha.substring(0, 7) : "";
+      const msg = c.message ? c.message.split("\n")[0].substring(0, 60) : "";
+      ctx.fillStyle = getComputedStyle(document.documentElement)
+        .getPropertyValue("--color-text").trim() || "#c9d1d9";
+      ctx.font = "11px monospace";
+      ctx.fillText(`${sha} ${msg}`, x + this.nodeRadius + 6, y + 4);
+      ctx.fillStyle = nodeColor;
+    }
+
+    ctx.restore();
+  }
+
+  /** @param {MouseEvent} e */
+  _onMouseDown(e) {
+    this._dragging = true;
+    this._lastX = e.clientX;
+    this._lastY = e.clientY;
+  }
+
+  /** @param {MouseEvent} e */
+  _onMouseMove(e) {
+    if (!this._dragging) return;
+    this.offsetX += e.clientX - this._lastX;
+    this.offsetY += e.clientY - this._lastY;
+    this._lastX = e.clientX;
+    this._lastY = e.clientY;
+    this._render();
+  }
+
+  _onMouseUp() {
+    this._dragging = false;
+  }
+
+  /** @param {WheelEvent} e */
+  _onWheel(e) {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    this.scale = Math.max(0.2, Math.min(5, this.scale * delta));
+    this._render();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* ActivityHeatmap                                                     */
+/* ------------------------------------------------------------------ */
+
+class ActivityHeatmap {
+  /**
+   * Render a 52-week activity heatmap (GitHub-style contribution calendar).
+   *
+   * @param {HTMLElement} container  Element to render the heatmap into
+   * @param {Array} commits         Commit data with authored_date fields
+   */
+  static render(container, commits) {
+    if (!container || !commits || commits.length === 0) return;
+
+    // Count commits per day for the last 52 weeks
+    const now = new Date();
+    const weekMs = 7 * 86400000;
+    const startDate = new Date(now.getTime() - 52 * weekMs);
+
+    const dayCounts = {};
+    commits.forEach((c) => {
+      const dateStr = (c.authored_date || "").substring(0, 10);
+      if (dateStr) {
+        dayCounts[dateStr] = (dayCounts[dateStr] || 0) + 1;
+      }
+    });
+
+    // Find max for scaling
+    const maxCount = Math.max(1, ...Object.values(dayCounts));
+
+    // Build grid
+    const grid = document.createElement("div");
+    grid.className = "heatmap";
+
+    for (let week = 0; week < 52; week++) {
+      for (let day = 0; day < 7; day++) {
+        const date = new Date(startDate.getTime() + (week * 7 + day) * 86400000);
+        const dateStr = date.toISOString().substring(0, 10);
+        const count = dayCounts[dateStr] || 0;
+
+        const cell = document.createElement("div");
+        cell.className = "heatmap__cell";
+        cell.title = `${dateStr}: ${count} commit${count !== 1 ? "s" : ""}`;
+
+        if (count > 0) {
+          const level = Math.min(4, Math.ceil((count / maxCount) * 4));
+          cell.classList.add(`heatmap__cell--l${level}`);
+        }
+
+        grid.appendChild(cell);
+      }
+    }
+
+    container.appendChild(grid);
   }
 }
 
@@ -712,4 +1217,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Initialise sidebar navigation
   new SidebarNav();
+
+  // Initialise theme toggle
+  new ThemeToggle("theme-toggle");
 });

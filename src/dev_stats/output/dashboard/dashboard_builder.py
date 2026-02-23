@@ -21,6 +21,37 @@ logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = __file__.replace("dashboard_builder.py", "templates")
 
+# Size thresholds in bytes.
+_WARN_SIZE_BYTES = 30 * 1024 * 1024  # 30 MB
+_ERROR_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+class DashboardSizeError(Exception):
+    """Raised when the generated dashboard exceeds the maximum allowed size.
+
+    Attributes:
+        size_bytes: Actual size in bytes.
+        limit_bytes: Maximum allowed size in bytes.
+    """
+
+    def __init__(self, size_bytes: int, limit_bytes: int) -> None:
+        """Initialise the error.
+
+        Args:
+            size_bytes: Actual size of the generated HTML.
+            limit_bytes: Maximum allowed size.
+        """
+        self.size_bytes = size_bytes
+        self.limit_bytes = limit_bytes
+        size_mb = size_bytes / (1024 * 1024)
+        limit_mb = limit_bytes / (1024 * 1024)
+        super().__init__(
+            f"Dashboard HTML is {size_mb:.1f} MB, exceeding the "
+            f"{limit_mb:.0f} MB limit. Reduce the data by filtering "
+            f"commits (--max-commits), files (--exclude), or disabling "
+            f"optional analyses (--no-blame, --no-churn)."
+        )
+
 
 class DashboardBuilder(AbstractExporter):
     """Builds a fully self-contained single-file HTML dashboard.
@@ -49,16 +80,46 @@ class DashboardBuilder(AbstractExporter):
 
         Returns:
             Single-element list with the path to the generated HTML.
+
+        Raises:
+            DashboardSizeError: If the generated HTML exceeds 50 MB.
         """
         output_dir.mkdir(parents=True, exist_ok=True)
 
         context = self._build_context()
         html = self._render_template(context)
 
+        self._check_size(html)
+
         out_path = output_dir / "dashboard.html"
         out_path.write_text(html, encoding="utf-8")
         logger.info("Dashboard written to %s", out_path)
         return [out_path]
+
+    @staticmethod
+    def _check_size(html: str) -> None:
+        """Check the generated HTML size against thresholds.
+
+        Args:
+            html: The rendered HTML string.
+
+        Raises:
+            DashboardSizeError: If size exceeds the error threshold.
+        """
+        size_bytes = len(html.encode("utf-8"))
+
+        if size_bytes > _ERROR_SIZE_BYTES:
+            raise DashboardSizeError(size_bytes, _ERROR_SIZE_BYTES)
+
+        if size_bytes > _WARN_SIZE_BYTES:
+            size_mb = size_bytes / (1024 * 1024)
+            logger.warning(
+                "Dashboard HTML is %.1f MB (threshold: %.0f MB). "
+                "Consider reducing data with --max-commits, --exclude, "
+                "or --no-blame.",
+                size_mb,
+                _WARN_SIZE_BYTES / (1024 * 1024),
+            )
 
     def _build_context(self) -> dict[str, object]:
         """Build the full Jinja2 template context.
