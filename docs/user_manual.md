@@ -20,15 +20,38 @@
 Requirements: Python 3.12+, Git 2.20+ on PATH.
 
 ```bash
-# Recommended
+# Install uv if you don't have it
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install dev-stats
 
-# Alternative
+# From source (recommended)
+git clone https://github.com/filthyhuman/dev-stats
+cd dev-stats
+uv tool install --from ./ dev-stats
+
+# Or run without installing globally
+uv run dev-stats analyse .
+
+# From PyPI (when published)
+uv tool install dev-stats
+# or
 pip install dev-stats
 
 # Verify
 dev-stats --version
+```
+
+### Updating
+
+```bash
+# From source — pull latest and reinstall
+cd dev-stats
+git pull
+uv tool install --from ./ --force dev-stats
+
+# From PyPI (when published)
+uv tool upgrade dev-stats
+# or
+pip install --upgrade dev-stats
 ```
 
 ---
@@ -36,12 +59,11 @@ dev-stats --version
 ## First Run
 
 ```bash
-cd /path/to/your/repo
-dev-stats analyse .                    # terminal report
-dev-stats analyse . --output html      # generate dashboard
-open dev-stats-dashboard.html          # macOS
-xdg-open dev-stats-dashboard.html     # Linux
-start dev-stats-dashboard.html         # Windows
+dev-stats analyse /path/to/repository                    # terminal report
+dev-stats analyse /path/to/repository -f dashboard       # generate dashboard
+open dev-stats-output/dev-stats-dashboard.html           # macOS
+xdg-open dev-stats-output/dev-stats-dashboard.html      # Linux
+start dev-stats-output/dev-stats-dashboard.html          # Windows
 ```
 
 ---
@@ -53,7 +75,7 @@ start dev-stats-dashboard.html         # Windows
 dev-stats config --print-defaults
 
 # Use a custom config
-dev-stats analyse . --config thresholds.toml
+dev-stats analyse /path/to/repository --config thresholds.toml
 ```
 
 All configuration options with defaults:
@@ -104,14 +126,14 @@ junit_filename             = "dev-stats-report.xml"
 dev-stats analyse [PATH] [OPTIONS]
 
 # Examples
-dev-stats analyse .
-dev-stats analyse . --output html --output json
-dev-stats analyse . --output all
-dev-stats analyse . --lang python --lang java
-dev-stats analyse . --top 50
-dev-stats analyse . --diff main --output html
-dev-stats analyse . --exclude "vendor/**" --exclude "*.generated.py"
-dev-stats analyse . --watch --output html
+dev-stats analyse /path/to/repository
+dev-stats analyse /path/to/repository -f json
+dev-stats analyse /path/to/repository -f all
+dev-stats analyse /path/to/repository --lang python --lang java
+dev-stats analyse /path/to/repository --top 50
+dev-stats analyse /path/to/repository --diff main -f dashboard
+dev-stats analyse /path/to/repository --exclude "vendor/**" --exclude "*.generated.py"
+dev-stats analyse /path/to/repository --watch -f dashboard
 ```
 
 ---
@@ -122,13 +144,13 @@ dev-stats analyse . --watch --output html
 dev-stats branches [PATH] [OPTIONS]
 
 # Examples
-dev-stats branches .                            # all branches
-dev-stats branches . --show merged              # only merged
-dev-stats branches . --show abandoned           # inactive > 90 days
-dev-stats branches . --min-score 80             # safe-to-delete candidates
-dev-stats branches . --min-age 30               # older than 30 days
-dev-stats branches . --show merged --generate-script  # write cleanup_branches.sh
-dev-stats branches . --all                      # include remote branches
+dev-stats branches /path/to/repository                            # all branches
+dev-stats branches /path/to/repository --show merged              # only merged
+dev-stats branches /path/to/repository --show abandoned           # inactive > 90 days
+dev-stats branches /path/to/repository --min-score 80             # safe-to-delete candidates
+dev-stats branches /path/to/repository --min-age 30               # older than 30 days
+dev-stats branches /path/to/repository --show merged --generate-script  # write cleanup_branches.sh
+dev-stats branches /path/to/repository --all                      # include remote branches
 ```
 
 ### Deletability Score
@@ -154,12 +176,12 @@ dev-stats branches . --all                      # include remote branches
 dev-stats gitlog [PATH] [OPTIONS]
 
 # Examples
-dev-stats gitlog .                        # all history
-dev-stats gitlog . --depth 500            # last 500 commits
-dev-stats gitlog . --author "Alice"       # filter by author
-dev-stats gitlog . --blame-top 20         # blame for top 20 files
-dev-stats gitlog . --no-blame             # skip blame (faster)
-dev-stats gitlog . --since 2024-01-01    # from date
+dev-stats gitlog /path/to/repository                        # all history
+dev-stats gitlog /path/to/repository --depth 500            # last 500 commits
+dev-stats gitlog /path/to/repository --author "Alice"       # filter by author
+dev-stats gitlog /path/to/repository --blame-top 20         # blame for top 20 files
+dev-stats gitlog /path/to/repository --no-blame             # skip blame (faster)
+dev-stats gitlog /path/to/repository --since 2024-01-01    # from date
 ```
 
 ### Anomaly Detection
@@ -200,22 +222,22 @@ Top-right quadrant = complex AND frequently changed = highest refactoring priori
 
 ## Output Formats
 
-| Format     | Flag       | Output                                    |
-|------------|------------|-------------------------------------------|
-| Terminal   | `terminal` | Printed to stdout (default)               |
-| HTML       | `html`     | dev-stats-dashboard.html                  |
-| JSON       | `json`     | dev-stats-report.json                     |
-| CSV        | `csv`      | dev-stats-csv/ (one file per entity type) |
-| JUnit XML  | `xml`      | dev-stats-report.xml                      |
-| SVG Badges | `badges`   | dev-stats-badges/                         |
-| All        | `all`      | All of the above                          |
+| Format     | Flag        | Output                                    |
+|------------|-------------|-------------------------------------------|
+| Terminal   | *(default)* | Printed to stdout when no `-f` is given   |
+| JSON       | `json`      | dev-stats-report.json                     |
+| CSV        | `csv`       | dev-stats-csv/ (one file per entity type) |
+| JUnit XML  | `xml`       | dev-stats-report.xml                      |
+| SVG Badges | `badges`    | dev-stats-badges/                         |
+| Dashboard  | `dashboard` | dev-stats-dashboard.html                  |
+| All        | `all`       | All of the above                          |
 
 ---
 
 ## Quality Gates
 
 ```bash
-dev-stats analyse . --fail-on-violations
+dev-stats analyse /path/to/repository --fail-on-violations
 echo $?   # 0 = all pass, 1 = violations found
 ```
 

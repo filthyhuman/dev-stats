@@ -7,8 +7,11 @@
 ## Generating the Dashboard
 
 ```bash
-# Generate dashboard alongside terminal output
-dev-stats analyse . -f all
+# Generate dashboard only
+dev-stats analyse /path/to/repository -f dashboard
+
+# Or generate all formats including dashboard
+dev-stats analyse /path/to/repository -f all
 
 # Dashboard file appears in the output directory
 open dev-stats-output/dev-stats-dashboard.html
@@ -169,7 +172,7 @@ max_class_lines = 400
 ```
 
 ```bash
-dev-stats analyse . --config thresholds.toml -f all
+dev-stats analyse /path/to/repository --config thresholds.toml -f all
 ```
 
 ### Embedding in CI
@@ -178,7 +181,7 @@ Generate the dashboard as a CI artifact:
 
 ```yaml
 # GitHub Actions
-- run: dev-stats analyse . -f all --ci github
+- run: dev-stats analyse . -f dashboard --ci github
 - uses: actions/upload-artifact@v4
   with:
     name: dev-stats-dashboard

@@ -36,16 +36,33 @@ dev-stats analyses any local Git repository and produces:
 ## Installation
 
 ```bash
-# via uv (recommended)
-uv tool install dev-stats
-
-# via pip
-pip install dev-stats
-
-# from source
+# from source (recommended)
 git clone https://github.com/filthyhuman/dev-stats
 cd dev-stats
-uv sync --all-extras
+uv tool install --from ./ dev-stats
+
+# or run without installing globally
+uv run dev-stats analyse .
+
+# via uv (when published to PyPI)
+uv tool install dev-stats
+
+# via pip (when published to PyPI)
+pip install dev-stats
+```
+
+### Updating
+
+```bash
+# from source — pull latest and reinstall
+cd dev-stats
+git pull
+uv tool install --from ./ --force dev-stats
+
+# from PyPI (when published)
+uv tool upgrade dev-stats
+# or
+pip install --upgrade dev-stats
 ```
 
 ---
@@ -54,20 +71,23 @@ uv sync --all-extras
 
 ```bash
 # Terminal report (instant)
-dev-stats analyse .
+dev-stats analyse /path/to/repository
 
 # Generate the HTML dashboard
-dev-stats analyse . --output html
-open dev-stats-dashboard.html
+dev-stats analyse /path/to/repository -f dashboard
+open dev-stats-output/dev-stats-dashboard.html
+
+# Dashboard with custom output directory
+dev-stats analyse /path/to/repository -f dashboard -o /path/to/dev-stats-report
 
 # All output formats at once
-dev-stats analyse . --output all
+dev-stats analyse /path/to/repository -f all
 
 # Branch cleanup recommendations
-dev-stats branches . --show merged --min-score 80 --generate-script
+dev-stats branches /path/to/repository --show merged --min-score 80 --generate-script
 
 # Deep Git history with blame
-dev-stats gitlog . --blame-top 50
+dev-stats gitlog /path/to/repository --blame-top 50
 ```
 
 ---
@@ -78,7 +98,8 @@ dev-stats gitlog . --blame-top 50
 
 | Flag | Default | Description |
 |---|---|---|
-| `--output` | `terminal` | `all` `html` `json` `csv` `xml` `terminal` `badges` — repeatable |
+| `--format` / `-f` | — | `json` `csv` `xml` `badges` `dashboard` `all` |
+| `--output` / `-o` | `dev-stats-output` | Directory for exported files |
 | `--ci` | `none` | `jenkins` `gitlab` `teamcity` `github` |
 | `--config FILE` | — | Custom thresholds.toml |
 | `--exclude PATTERN` | — | Glob exclude, repeatable |
@@ -148,7 +169,7 @@ stage('Code Quality') {
 ### GitLab CI
 ```yaml
 dev-stats:
-  script: dev-stats analyse . --ci gitlab --output html --fail-on-violations
+  script: dev-stats analyse . --ci gitlab -f dashboard --fail-on-violations
   artifacts:
     reports:
       codequality: gl-code-quality-report.json
@@ -163,7 +184,7 @@ Statistics appear automatically in build trend charts. No plugin required.
 
 ### GitHub Actions
 ```yaml
-- run: dev-stats analyse . --ci github --output html --fail-on-violations
+- run: dev-stats analyse . --ci github -f dashboard --fail-on-violations
 - uses: actions/upload-artifact@v4
   with:
     name: dev-stats-dashboard
@@ -191,7 +212,7 @@ abandoned_threshold_days  = 90
 ```
 
 ```bash
-dev-stats analyse . --config thresholds.toml
+dev-stats analyse /path/to/repository --config thresholds.toml
 ```
 
 ---

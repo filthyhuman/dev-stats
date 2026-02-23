@@ -25,7 +25,7 @@ configured in `thresholds.toml` or via `DEV_STATS_*` environment variables.
 ## Common Flags
 
 ```bash
-dev-stats analyse . \
+dev-stats analyse /path/to/repository \
     --ci <platform>        \   # jenkins | gitlab | teamcity | github
     --fail-on-violations   \   # exit 1 when any threshold is breached
     --diff <branch>        \   # only report violations in changed files

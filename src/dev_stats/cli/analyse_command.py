@@ -9,12 +9,14 @@ from typing import TYPE_CHECKING, Annotated
 
 import typer
 from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from dev_stats.config.analysis_config import AnalysisConfig
 from dev_stats.core.aggregator import Aggregator
 from dev_stats.core.dispatcher import Dispatcher
 from dev_stats.core.parser_registry import create_default_registry
 from dev_stats.core.scanner import Scanner
+from dev_stats.output.dashboard.dashboard_builder import DashboardBuilder
 from dev_stats.output.exporters.badge_generator import BadgeGenerator
 from dev_stats.output.exporters.csv_exporter import CsvExporter
 from dev_stats.output.exporters.json_exporter import JsonExporter
@@ -23,7 +25,7 @@ from dev_stats.output.exporters.xml_exporter import XmlExporter
 
 if TYPE_CHECKING:
     from dev_stats.ci.abstract_ci_adapter import AbstractCIAdapter
-    from dev_stats.core.models import RepoReport
+    from dev_stats.core.models import FileReport, RepoReport
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ class AnalyseCommand:
             typer.Option(
                 "--format",
                 "-f",
-                help="Output format: json | csv | xml | badges | all.",
+                help="Output format: json | csv | xml | badges | dashboard | all.",
             ),
         ] = None,
         ci: Annotated[
@@ -101,7 +103,7 @@ class AnalyseCommand:
         Args:
             repo: Path to the repository.
             output: Optional output directory for exports.
-            fmt: Output format (json, csv, xml, badges, all).
+            fmt: Output format (json, csv, xml, badges, dashboard, all).
             ci: Optional CI adapter name.
             config: Optional TOML config file path.
             exclude: Glob patterns to exclude.
@@ -117,6 +119,7 @@ class AnalyseCommand:
         _fail_exit = False
 
         try:
+            console.print("[bold]Loading configuration...[/bold]")
             analysis_config = AnalysisConfig.load(
                 config_path=config,
                 repo_path=repo_path,
@@ -129,20 +132,41 @@ class AnalyseCommand:
                 )
 
             # Scan
+            console.print("[bold]Scanning files...[/bold]")
             scanner = Scanner(repo_path=repo_path, config=analysis_config)
             paths = list(scanner.scan())
+            console.print(f"  Found {len(paths)} file(s)")
 
             # Parse
             registry = create_default_registry()
             dispatcher = Dispatcher(registry=registry, repo_root=repo_path)
-            file_reports = dispatcher.parse_many(paths)
+            file_reports: list[FileReport] = []
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold]Parsing files...[/bold]"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TextColumn("[dim]{task.completed}/{task.total}[/dim]"),
+                console=console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task("Parsing", total=len(paths))
+                for path in paths:
+                    try:
+                        file_reports.append(dispatcher.parse(path))
+                    except Exception:
+                        logger.exception("Failed to parse %s", path)
+                    progress.advance(task)
+            console.print(f"  Parsed {len(file_reports)} file(s)")
 
             # Aggregate
+            console.print("[bold]Aggregating results...[/bold]")
             aggregator = Aggregator()
             report = aggregator.aggregate(files=file_reports, repo_root=repo_path)
 
             # Terminal output (always shown unless format-only)
             if fmt is None:
+                console.print("[bold]Generating terminal report...[/bold]")
                 reporter = TerminalReporter(
                     report=report,
                     config=analysis_config,
@@ -165,6 +189,7 @@ class AnalyseCommand:
 
             # CI adapter
             if ci is not None or fail_on_violations:
+                console.print("[bold]Checking quality gates...[/bold]")
                 adapter = self._create_ci_adapter(
                     name=ci or "github",
                     report=report,
@@ -225,7 +250,7 @@ class AnalyseCommand:
         """Dispatch to the requested exporter(s).
 
         Args:
-            fmt: Format string (json, csv, xml, badges, all).
+            fmt: Format string (json, csv, xml, badges, dashboard, all).
             report: The RepoReport.
             config: The AnalysisConfig.
             output_dir: Directory to write exports into.
@@ -234,7 +259,7 @@ class AnalyseCommand:
         Returns:
             List of paths to generated files.
         """
-        formats = {fmt} if fmt != "all" else {"json", "csv", "xml", "badges"}
+        formats = {fmt} if fmt != "all" else {"json", "csv", "xml", "badges", "dashboard"}
         created: list[Path] = []
 
         if "json" in formats:
@@ -258,6 +283,11 @@ class AnalyseCommand:
             console.print("[bold]Generating badges...[/bold]")
             badge_gen = BadgeGenerator(report=report, config=config)
             created.extend(badge_gen.export(output_dir))
+
+        if "dashboard" in formats:
+            console.print("[bold]Building dashboard...[/bold]")
+            dashboard = DashboardBuilder(report=report, config=config)
+            created.extend(dashboard.export(output_dir))
 
         return created
 

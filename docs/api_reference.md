@@ -172,18 +172,14 @@ export(output_dir: Path) -> list[Path]   # abstract
 
 ### Concrete Exporters
 
-| Class             | File                   | Output                     |
-|-------------------|------------------------|----------------------------|
-| TerminalReporter  | terminal_reporter.py   | Rich tables to stdout       |
-| JsonExporter      | json_exporter.py       | dev-stats-report.json       |
-| CsvExporter       | csv_exporter.py        | dev-stats-csv/ directory    |
-| XmlExporter       | xml_exporter.py        | JUnit XML                   |
-| BadgeGenerator    | badge_generator.py     | SVG badges                  |
-
-### DashboardBuilder (dashboard/dashboard_builder.py)
-```
-build(output_path: Path) -> Path
-```
+| Class             | File                          | Output                     |
+|-------------------|-------------------------------|----------------------------|
+| TerminalReporter  | terminal_reporter.py          | Rich tables to stdout       |
+| JsonExporter      | json_exporter.py              | dev-stats-report.json       |
+| CsvExporter       | csv_exporter.py               | dev-stats-csv/ directory    |
+| XmlExporter       | xml_exporter.py               | JUnit XML                   |
+| BadgeGenerator    | badge_generator.py            | SVG badges                  |
+| DashboardBuilder  | dashboard/dashboard_builder.py| dev-stats-dashboard.html    |
 
 ---
 

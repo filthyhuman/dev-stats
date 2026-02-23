@@ -6,6 +6,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+- **Dashboard CLI integration** — `--format dashboard` (or `-f dashboard`)
+  generates the self-contained HTML dashboard directly from the `analyse`
+  command. Also included in `-f all`.
+
 ## [0.1.0] — 2026-02-23
 
 ### Added
