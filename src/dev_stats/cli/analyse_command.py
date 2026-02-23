@@ -14,6 +14,12 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from dev_stats.config.analysis_config import AnalysisConfig
 from dev_stats.core.aggregator import Aggregator
 from dev_stats.core.dispatcher import Dispatcher
+from dev_stats.core.git.branch_analyzer import BranchAnalyzer
+from dev_stats.core.git.commit_enricher import CommitEnricher
+from dev_stats.core.git.contributor_analyzer import ContributorAnalyzer
+from dev_stats.core.git.log_harvester import LogHarvester
+from dev_stats.core.git.pattern_detector import PatternDetector
+from dev_stats.core.git.timeline_builder import TimelineBuilder
 from dev_stats.core.parser_registry import create_default_registry
 from dev_stats.core.scanner import Scanner
 from dev_stats.output.dashboard.dashboard_builder import DashboardBuilder
@@ -159,10 +165,51 @@ class AnalyseCommand:
                     progress.advance(task)
             console.print(f"  Parsed {len(file_reports)} file(s)")
 
+            # Git analysis
+            commits = None
+            enriched = None
+            branches_report = None
+            contributors = None
+            patterns = None
+            timeline = None
+            try:
+                console.print("[bold]Analysing git history...[/bold]")
+                harvester = LogHarvester(repo_path)
+                commits = harvester.harvest(since=since)
+                if commits:
+                    enricher = CommitEnricher()
+                    enriched = enricher.enrich(commits)
+
+                    contributor_analyzer = ContributorAnalyzer()
+                    contributors = contributor_analyzer.analyse(commits)
+
+                    detector = PatternDetector()
+                    patterns = detector.detect_all(commits, enriched)
+
+                    builder = TimelineBuilder()
+                    timeline = builder.loc_timeline(commits)
+
+                branch_analyzer = BranchAnalyzer(
+                    repo_path=repo_path,
+                    config=analysis_config.branches,
+                )
+                branches_report = branch_analyzer.analyse()
+            except Exception:
+                logger.warning("Git analysis failed; proceeding without git data", exc_info=True)
+
             # Aggregate
             console.print("[bold]Aggregating results...[/bold]")
             aggregator = Aggregator()
-            report = aggregator.aggregate(files=file_reports, repo_root=repo_path)
+            report = aggregator.aggregate(
+                files=file_reports,
+                repo_root=repo_path,
+                commits=commits,
+                enriched_commits=enriched,
+                branches_report=branches_report,
+                contributors=contributors,
+                patterns=patterns,
+                timeline=timeline,
+            )
 
             # Terminal output (always shown unless format-only)
             if fmt is None:
