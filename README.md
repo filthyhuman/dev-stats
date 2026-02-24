@@ -106,6 +106,7 @@ dev-stats gitlog /path/to/repository --blame-top 50
 | `--top N` | `20` | Rows in ranking lists |
 | `--lang NAME` | — | Restrict to language(s), repeatable |
 | `--diff BRANCH` | — | Delta report vs. another branch |
+| `--since DATE` | — | Analyse commits since this date |
 | `--fail-on-violations` | false | Exit 1 when thresholds breached |
 | `--watch` | false | Re-analyse on file changes |
 

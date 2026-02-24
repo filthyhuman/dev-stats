@@ -10,6 +10,16 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - **Dashboard CLI integration** — `--format dashboard` (or `-f dashboard`)
   generates the self-contained HTML dashboard directly from the `analyse`
   command. Also included in `-f all`.
+- **Git analysis in `analyse` command** — the `analyse` command now
+  automatically runs the full git subsystem (LogHarvester, CommitEnricher,
+  BranchAnalyzer, ContributorAnalyzer, PatternDetector, TimelineBuilder)
+  so the dashboard and exports include real git data (commits, branches,
+  contributors, patterns, timeline). Git failures are handled gracefully
+  — file analysis still completes.
+- **`--since` flag for `analyse`** — filter git history to commits after a
+  given date (e.g. `--since 2025-01-01`).
+- **CLI unit tests** — `analyse_command.py` coverage 40% → 93%,
+  `branches_command.py` coverage 39% → 100%.
 
 ## [0.1.0] — 2026-02-23
 

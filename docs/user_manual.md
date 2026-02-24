@@ -122,6 +122,13 @@ junit_filename             = "dev-stats-report.xml"
 
 ## Analyse Command
 
+The `analyse` command runs the full pipeline: file scanning, language parsing,
+git history analysis (commits, branches, contributors, patterns, timeline),
+metric aggregation, and reporting. Git analysis is automatic — if the target
+path is a Git repository, commit history and branch data are included in the
+report and dashboard. If git analysis fails (e.g. not a git repo, no commits),
+file analysis still completes normally.
+
 ```bash
 dev-stats analyse [PATH] [OPTIONS]
 
@@ -134,6 +141,7 @@ dev-stats analyse /path/to/repository --top 50
 dev-stats analyse /path/to/repository --diff main -f dashboard
 dev-stats analyse /path/to/repository --exclude "vendor/**" --exclude "*.generated.py"
 dev-stats analyse /path/to/repository --watch -f dashboard
+dev-stats analyse /path/to/repository --since 2025-01-01
 ```
 
 ---
