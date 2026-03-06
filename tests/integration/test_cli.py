@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import re
+
 from typer.testing import CliRunner
 
 from dev_stats import __version__
 from dev_stats.cli.app import app
 
 runner = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from *text*."""
+    return _ANSI_RE.sub("", text)
 
 
 class TestVersion:
@@ -36,8 +45,9 @@ class TestHelp:
         """``analyse --help`` should exit 0 and show flags."""
         result = runner.invoke(app, ["analyse", "--help"])
         assert result.exit_code == 0
-        assert "--output" in result.output
-        assert "--ci" in result.output
+        plain = _strip_ansi(result.output)
+        assert "--output" in plain
+        assert "--ci" in plain
 
 
 class TestAnalyse:
