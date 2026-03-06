@@ -95,6 +95,13 @@
       {% if has_commits %}
       <div class="card">
         <div class="card__title">LOC Over Time</div>
+        <div class="chart-range-bar" id="loc-range-bar">
+          <button class="chart-range-btn" data-range="6">6M</button>
+          <button class="chart-range-btn" data-range="12">1Y</button>
+          <button class="chart-range-btn" data-range="24">2Y</button>
+          <button class="chart-range-btn" data-range="60">5Y</button>
+          <button class="chart-range-btn chart-range-btn--active" data-range="0">All</button>
+        </div>
         <div class="chart-container">
           <canvas id="chart-loc-timeline"></canvas>
         </div>

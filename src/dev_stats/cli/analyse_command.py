@@ -173,43 +173,75 @@ class AnalyseCommand:
             patterns = None
             timeline = None
             try:
-                console.print("[bold]Analysing git history...[/bold]")
-                harvester = LogHarvester(repo_path)
-                commits = harvester.harvest(since=since)
-                if commits:
-                    enricher = CommitEnricher()
-                    enriched = enricher.enrich(commits)
+                git_steps = 6
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[bold]Analysing git history...[/bold]"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    TextColumn("[dim]{task.completed}/{task.total}[/dim]"),
+                    console=console,
+                    transient=True,
+                ) as progress:
+                    task = progress.add_task("Git", total=git_steps)
 
-                    contributor_analyzer = ContributorAnalyzer()
-                    contributors = contributor_analyzer.analyse(commits)
+                    harvester = LogHarvester(repo_path)
+                    commits = harvester.harvest(since=since)
+                    progress.advance(task)
 
-                    detector = PatternDetector()
-                    patterns = detector.detect_all(commits, enriched)
+                    if commits:
+                        enricher = CommitEnricher()
+                        enriched = enricher.enrich(commits)
+                    progress.advance(task)
 
-                    builder = TimelineBuilder()
-                    timeline = builder.loc_timeline(commits)
+                    if commits:
+                        contributor_analyzer = ContributorAnalyzer()
+                        contributors = contributor_analyzer.analyse(commits)
+                    progress.advance(task)
 
-                branch_analyzer = BranchAnalyzer(
-                    repo_path=repo_path,
-                    config=analysis_config.branches,
-                )
-                branches_report = branch_analyzer.analyse()
+                    if commits and enriched:
+                        detector = PatternDetector()
+                        patterns = detector.detect_all(commits, enriched)
+                    progress.advance(task)
+
+                    if commits:
+                        builder = TimelineBuilder()
+                        timeline = builder.loc_timeline(commits)
+                    progress.advance(task)
+
+                    branch_analyzer = BranchAnalyzer(
+                        repo_path=repo_path,
+                        config=analysis_config.branches,
+                    )
+                    branches_report = branch_analyzer.analyse()
+                    progress.advance(task)
+                console.print("  Analysed git history")
             except Exception:
                 logger.warning("Git analysis failed; proceeding without git data", exc_info=True)
 
             # Aggregate
-            console.print("[bold]Aggregating results...[/bold]")
-            aggregator = Aggregator()
-            report = aggregator.aggregate(
-                files=file_reports,
-                repo_root=repo_path,
-                commits=commits,
-                enriched_commits=enriched,
-                branches_report=branches_report,
-                contributors=contributors,
-                patterns=patterns,
-                timeline=timeline,
-            )
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold]Aggregating results...[/bold]"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task("Aggregate", total=1)
+                aggregator = Aggregator()
+                report = aggregator.aggregate(
+                    files=file_reports,
+                    repo_root=repo_path,
+                    commits=commits,
+                    enriched_commits=enriched,
+                    branches_report=branches_report,
+                    contributors=contributors,
+                    patterns=patterns,
+                    timeline=timeline,
+                )
+                progress.advance(task)
+            console.print("  Aggregated results")
 
             # Terminal output (always shown unless format-only)
             if fmt is None:
@@ -332,9 +364,18 @@ class AnalyseCommand:
             created.extend(badge_gen.export(output_dir))
 
         if "dashboard" in formats:
-            console.print("[bold]Building dashboard...[/bold]")
-            dashboard = DashboardBuilder(report=report, config=config)
-            created.extend(dashboard.export(output_dir))
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold]Building dashboard...[/bold]"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task("Dashboard", total=1)
+                dashboard = DashboardBuilder(report=report, config=config)
+                created.extend(dashboard.export(output_dir))
+                progress.advance(task)
 
         return created
 

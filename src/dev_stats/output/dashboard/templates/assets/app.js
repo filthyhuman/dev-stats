@@ -287,15 +287,13 @@ class DataLoader {
 
       // Use DecompressionStream if available
       if (typeof DecompressionStream !== "undefined") {
+        // "deflate" = zlib format (RFC 1950): header + deflate + adler32
+        // Pass the full zlib bytes — do NOT strip header/checksum.
         const ds = new DecompressionStream("deflate");
         const writer = ds.writable.getWriter();
         const reader = ds.readable.getReader();
 
-        // zlib = 2-byte header + deflate + adler32
-        // DecompressionStream("deflate") handles raw deflate
-        // Strip zlib header (2 bytes) and checksum (4 bytes)
-        const rawDeflate = bytes.slice(2, -4);
-        writer.write(rawDeflate);
+        writer.write(bytes);
         writer.close();
 
         const chunks = [];
@@ -482,6 +480,7 @@ class LazyRenderer {
 
     // Dispatch to the correct renderer
     const renderers = {
+      "tab-languages": () => LazyRenderer._renderLanguages(data),
       "tab-files": () => LazyRenderer._renderFiles(data),
       "tab-classes": () => LazyRenderer._renderClasses(data),
       "tab-methods": () => LazyRenderer._renderMethods(data),
@@ -541,6 +540,13 @@ class LazyRenderer {
       tr.appendChild(td);
     });
     return tr;
+  }
+
+  /** Render the Languages tab chart from data chunks. */
+  static _renderLanguages(data) {
+    const languages = data.languages;
+    if (!languages) return;
+    ChartRenderer.langBar("chart-lang-bar", languages);
   }
 
   /** Render the Files tab from data chunks. */
@@ -632,6 +638,8 @@ class LazyRenderer {
         )
       );
     });
+
+    ChartRenderer.hotspotScatter("chart-hotspots", churn, data.files);
   }
 
   /** Render the Dependencies tab from data chunks. */
@@ -657,6 +665,8 @@ class LazyRenderer {
         )
       );
     });
+
+    ChartRenderer.instabilityBar("chart-instability", coupling);
   }
 
   /** Render the Branches tab from data chunks. */
@@ -782,6 +792,8 @@ class LazyRenderer {
         );
       });
     }
+
+    ChartRenderer.coverageBar("chart-coverage", data.coverage);
   }
 }
 
@@ -1133,6 +1145,419 @@ class ActivityHeatmap {
 }
 
 /* ------------------------------------------------------------------ */
+/* ChartRenderer                                                      */
+/* ------------------------------------------------------------------ */
+
+class ChartRenderer {
+  /** 10-colour palette matching the dashboard theme. */
+  static PALETTE = [
+    "#58a6ff", "#3fb950", "#d29922", "#f85149", "#bc8cff",
+    "#79c0ff", "#56d364", "#e3b341", "#ff7b72", "#d2a8ff",
+  ];
+
+  /**
+   * Get a colour from the palette (wrapping for > 10 items).
+   * @param {number} index
+   * @returns {string}
+   */
+  static _color(index) {
+    return ChartRenderer.PALETTE[index % ChartRenderer.PALETTE.length];
+  }
+
+  /**
+   * Read a CSS custom property from the document root.
+   * @param {string} prop  Property name (e.g. "--color-text")
+   * @returns {string}
+   */
+  static _css(prop) {
+    return getComputedStyle(document.documentElement).getPropertyValue(prop).trim();
+  }
+
+  /**
+   * Shared defaults for Chart.js (dark-/light-aware).
+   * @returns {Object}
+   */
+  static _defaults() {
+    const text = ChartRenderer._css("--color-text") || "#c9d1d9";
+    const muted = ChartRenderer._css("--color-text-muted") || "#8b949e";
+    const border = ChartRenderer._css("--color-border") || "#30363d";
+    return { text, muted, border };
+  }
+
+  /**
+   * Render a doughnut chart of language distribution.
+   * @param {string} canvasId
+   * @param {Array} languages  [{name, file_count, total_lines, code_lines}]
+   */
+  static langDonut(canvasId, languages) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !languages || languages.length === 0) return;
+    const { text } = ChartRenderer._defaults();
+
+    const labels = languages.map((l) => l.name || l.language || "Unknown");
+    const data = languages.map((l) => l.code_lines || l.total_lines || 0);
+    const colors = labels.map((_, i) => ChartRenderer._color(i));
+
+    new Chart(canvas, {
+      type: "doughnut",
+      data: {
+        labels,
+        datasets: [{ data, backgroundColor: colors, borderWidth: 0 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "right", labels: { color: text, padding: 12 } },
+        },
+      },
+    });
+  }
+
+  /** @type {Chart|null} Active LOC timeline chart instance. */
+  static _locChart = null;
+
+  /** @type {string|null} Canvas ID for the LOC chart. */
+  static _locCanvasId = null;
+
+  /** @type {Array|null} Full timeline data for range filtering. */
+  static _locTimeline = null;
+
+  /**
+   * Render a line chart of LOC over time with range filtering.
+   *
+   * Range is computed relative to the **last data point** (not "now"),
+   * so historical projects with no recent commits still produce
+   * meaningful sub-ranges.
+   *
+   * @param {string} canvasId
+   * @param {Array} timeline  [{date, value, label}]
+   * @param {number} [rangeMonths=0]  0 = show all data
+   */
+  static locTimeline(canvasId, timeline, rangeMonths = 0) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !timeline || timeline.length === 0) return;
+
+    // Store full data and canvas ID for re-rendering with different ranges
+    if (!ChartRenderer._locTimeline) {
+      ChartRenderer._locTimeline = timeline;
+      ChartRenderer._locCanvasId = canvasId;
+    }
+
+    // Filter by range relative to the latest data point
+    let filtered = timeline;
+    if (rangeMonths > 0) {
+      const lastDate = new Date(timeline[timeline.length - 1].date);
+      const cutoff = new Date(lastDate);
+      cutoff.setMonth(cutoff.getMonth() - rangeMonths);
+      filtered = timeline.filter((t) => new Date(t.date) >= cutoff);
+      if (filtered.length === 0) filtered = timeline;
+    }
+
+    // Aggregate by week/month when there are too many points
+    const aggregated = ChartRenderer._aggregateTimeline(filtered);
+    const labels = aggregated.map((t) => t.label);
+    const values = aggregated.map((t) => t.value);
+
+    // Update existing chart or create a new one
+    if (ChartRenderer._locChart) {
+      ChartRenderer._locChart.data.labels = labels;
+      ChartRenderer._locChart.data.datasets[0].data = values;
+      ChartRenderer._locChart.data.datasets[0].pointRadius = aggregated.length > 60 ? 0 : 3;
+      ChartRenderer._locChart.update();
+      return;
+    }
+
+    const { text, muted, border } = ChartRenderer._defaults();
+
+    ChartRenderer._locChart = new Chart(canvas, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "Lines of Code",
+          data: values,
+          borderColor: ChartRenderer.PALETTE[0],
+          backgroundColor: ChartRenderer.PALETTE[0] + "33",
+          fill: true,
+          tension: 0.3,
+          pointRadius: aggregated.length > 60 ? 0 : 3,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 300 },
+        scales: {
+          x: { ticks: { color: muted, maxTicksLimit: 14 }, grid: { color: border } },
+          y: { ticks: { color: muted }, grid: { color: border } },
+        },
+        plugins: { legend: { labels: { color: text } } },
+      },
+    });
+
+    // Wire range buttons (once)
+    ChartRenderer._initRangeButtons();
+  }
+
+  /**
+   * Aggregate timeline data to keep charts readable.
+   * - <= 90 points: keep as-is (daily labels)
+   * - <= 365 points: aggregate by week
+   * - > 365 points: aggregate by month
+   * @param {Array} timeline
+   * @returns {Array} [{label, value}]
+   */
+  static _aggregateTimeline(timeline) {
+    if (timeline.length <= 90) {
+      return timeline.map((t) => {
+        const d = new Date(t.date);
+        return {
+          label: d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }),
+          value: t.value,
+        };
+      });
+    }
+
+    const byMonth = timeline.length > 365;
+    const buckets = new Map();
+
+    timeline.forEach((t) => {
+      const d = new Date(t.date);
+      const key = byMonth
+        ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+        : (() => {
+            const start = new Date(d);
+            start.setDate(start.getDate() - start.getDay());
+            return start.toISOString().substring(0, 10);
+          })();
+      buckets.set(key, { date: d, value: t.value });
+    });
+
+    const result = [];
+    for (const [, entry] of buckets) {
+      const d = entry.date;
+      const label = byMonth
+        ? d.toLocaleDateString(undefined, { month: "short", year: "numeric" })
+        : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" });
+      result.push({ label, value: entry.value });
+    }
+    return result;
+  }
+
+  /** @type {boolean} Whether range buttons have been wired. */
+  static _rangeWired = false;
+
+  /**
+   * Wire the LOC range buttons to update the chart.
+   */
+  static _initRangeButtons() {
+    if (ChartRenderer._rangeWired) return;
+    ChartRenderer._rangeWired = true;
+
+    const bar = document.getElementById("loc-range-bar");
+    if (!bar) return;
+
+    bar.addEventListener("click", (e) => {
+      const btn = e.target.closest(".chart-range-btn");
+      if (!btn) return;
+
+      bar.querySelectorAll(".chart-range-btn").forEach((b) =>
+        b.classList.toggle("chart-range-btn--active", b === btn)
+      );
+
+      const months = parseInt(btn.dataset.range, 10) || 0;
+      ChartRenderer.locTimeline(
+        ChartRenderer._locCanvasId,
+        ChartRenderer._locTimeline,
+        months
+      );
+    });
+  }
+
+  /**
+   * Render a horizontal bar chart of lines by language.
+   * @param {string} canvasId
+   * @param {Array} languages
+   */
+  static langBar(canvasId, languages) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !languages || languages.length === 0) return;
+    const { text, muted, border } = ChartRenderer._defaults();
+
+    const sorted = [...languages].sort(
+      (a, b) => (b.code_lines || b.total_lines || 0) - (a.code_lines || a.total_lines || 0)
+    );
+    const labels = sorted.map((l) => l.name || l.language || "Unknown");
+    const data = sorted.map((l) => l.code_lines || l.total_lines || 0);
+    const colors = labels.map((_, i) => ChartRenderer._color(i));
+
+    new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{ label: "Code Lines", data, backgroundColor: colors }],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { color: muted }, grid: { color: border } },
+          y: { ticks: { color: text } },
+        },
+        plugins: { legend: { display: false } },
+      },
+    });
+  }
+
+  /**
+   * Render a scatter chart of churn vs complexity hotspots.
+   * @param {string} canvasId
+   * @param {Array} churn   [{path, commit_count, churn_score, insertions, deletions}]
+   * @param {Array} files   [{path, …}]  (used for complexity lookup)
+   */
+  static hotspotScatter(canvasId, churn, files) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !churn || churn.length === 0) return;
+    const { text, muted, border } = ChartRenderer._defaults();
+
+    // Build a complexity map from files if available
+    const complexityMap = {};
+    if (files) {
+      files.forEach((f) => {
+        let maxCC = 0;
+        if (f.functions) f.functions.forEach((fn) => { maxCC = Math.max(maxCC, fn.cyclomatic_complexity || 0); });
+        if (f.classes) f.classes.forEach((c) => {
+          if (c.methods) c.methods.forEach((m) => { maxCC = Math.max(maxCC, m.cyclomatic_complexity || 0); });
+        });
+        complexityMap[f.path] = maxCC;
+      });
+    }
+
+    const points = churn.map((c) => ({
+      x: c.commit_count || 0,
+      y: complexityMap[c.path] || c.churn_score || 0,
+      label: c.path,
+    }));
+
+    new Chart(canvas, {
+      type: "scatter",
+      data: {
+        datasets: [{
+          label: "Files",
+          data: points,
+          backgroundColor: ChartRenderer.PALETTE[3] + "99",
+          pointRadius: 5,
+          pointHoverRadius: 7,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { title: { display: true, text: "Commits", color: text }, ticks: { color: muted }, grid: { color: border } },
+          y: { title: { display: true, text: "Complexity / Churn", color: text }, ticks: { color: muted }, grid: { color: border } },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const p = ctx.raw;
+                const name = p.label ? p.label.split("/").pop() : "";
+                return `${name} (commits: ${p.x}, score: ${p.y})`;
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Render a bar chart of module instability.
+   * @param {string} canvasId
+   * @param {Object} coupling  {modules: [{name, instability, distance, …}]}
+   */
+  static instabilityBar(canvasId, coupling) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !coupling || !coupling.modules || coupling.modules.length === 0) return;
+    const { text, muted, border } = ChartRenderer._defaults();
+
+    const modules = coupling.modules;
+    const labels = modules.map((m) => m.name);
+    const instData = modules.map((m) => m.instability);
+    const distData = modules.map((m) => m.distance);
+
+    new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "Instability", data: instData, backgroundColor: ChartRenderer.PALETTE[0] + "cc" },
+          { label: "Distance", data: distData, backgroundColor: ChartRenderer.PALETTE[2] + "cc" },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { color: muted }, grid: { color: border } },
+          y: { min: 0, max: 1, ticks: { color: muted }, grid: { color: border } },
+        },
+        plugins: { legend: { labels: { color: text } } },
+      },
+    });
+  }
+
+  /**
+   * Render a bar chart of test coverage per file.
+   * @param {string} canvasId
+   * @param {Object} coverage  {files: [{path, coverage_ratio}], overall_ratio}
+   */
+  static coverageBar(canvasId, coverage) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !coverage) return;
+
+    const { text, muted, border } = ChartRenderer._defaults();
+    const files = coverage.files || [];
+    if (files.length === 0) return;
+
+    // Sort by coverage ratio ascending so worst files are visible first
+    const sorted = [...files].sort((a, b) => a.coverage_ratio - b.coverage_ratio);
+    // Limit to top 30 files for readability
+    const shown = sorted.slice(0, 30);
+
+    const labels = shown.map((f) => f.path.split("/").pop());
+    const data = shown.map((f) => Math.round(f.coverage_ratio * 100));
+    const colors = shown.map((f) => {
+      if (f.coverage_ratio >= 0.9) return ChartRenderer.PALETTE[1];
+      if (f.coverage_ratio >= 0.7) return ChartRenderer.PALETTE[2];
+      return ChartRenderer.PALETTE[3];
+    });
+
+    new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{ label: "Coverage %", data, backgroundColor: colors }],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { min: 0, max: 100, ticks: { color: muted }, grid: { color: border } },
+          y: { ticks: { color: text, font: { size: 10 } } },
+        },
+        plugins: { legend: { display: false } },
+      },
+    });
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Sidebar navigation                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -1220,4 +1645,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Initialise theme toggle
   new ThemeToggle("theme-toggle");
+
+  // Render overview charts (non-lazy, visible on load)
+  (async () => {
+    const data = await DataLoader.loadAll();
+    LazyRenderer._data = data;
+    ChartRenderer.langDonut("chart-lang-donut", data.languages);
+    ChartRenderer.locTimeline("chart-loc-timeline", data.timeline);
+  })();
 });
