@@ -10,6 +10,7 @@ from dev_stats.core.parsers.generic_parser import GenericParser
 from dev_stats.core.parsers.go_parser import GoParser
 from dev_stats.core.parsers.java_parser import JavaParser
 from dev_stats.core.parsers.javascript_parser import JavaScriptParser
+from dev_stats.core.parsers.objectivec_parser import ObjectiveCParser
 from dev_stats.core.parsers.python_parser import PythonParser
 from dev_stats.core.parsers.typescript_parser import TypeScriptParser
 
@@ -91,4 +92,5 @@ def create_default_registry() -> ParserRegistry:
     registry.register(CppParser())
     registry.register(CSharpParser())
     registry.register(GoParser())
+    registry.register(ObjectiveCParser())
     return registry
