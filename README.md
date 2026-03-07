@@ -16,18 +16,31 @@
 
 dev-stats analyses any local Git repository and produces:
 
-- **Code metrics** — LOC, cyclomatic/cognitive complexity, Halstead volume,
-  coupling (Ce/Ca/instability), cohesion (LCOM), duplication, test-coverage
-  integration across Python, Java, JS/TS, C++, C#, Go, and 40+ file types.
+- **Code metrics** — LOC, cyclomatic/cognitive complexity (SonarSource-style),
+  Halstead volume, coupling (Ce/Ca/instability), cohesion (LCOM), duplication,
+  test-coverage integration across Python, Java, JS/TS, C++, C#, Go, and 40+
+  file types.
+- **Tree-sitter parser support** — six languages (Java, JavaScript, TypeScript,
+  C++, C#, Go) with tree-sitter for accurate AST parsing, automatic fallback
+  to regex parsers when tree-sitter is not installed.
 - **Deep Git exploration** — full commit history with expandable drill-down,
   per-file blame heat maps, contributor profiles, anomaly detection (hardcoded
   secrets, WIP commits, bus-factor warnings, force-push traces), release timelines.
 - **Branch management** — merged/unmerged lists with exact, squash, and rebase
-  merge detection; a 0–100 deletion-safety score; one-command shell script for
+  merge detection; a 0-100 deletion-safety score; one-command shell script for
   batch cleanup.
+- **Watch mode** — `--watch` flag for continuous re-analysis on file changes,
+  powered by watchfiles.
+- **Sorting and filtering** — `--sort` flag for file table ordering by lines,
+  code, complexity, or name.
 - **Self-contained HTML dashboard** — every chart, sortable table, and
-  five-level expandable Git log packed into one `.html` file. Open by
-  double-click. Share by email. No npm, no CDN, no internet required.
+  five-level expandable Git log packed into one `.html` file with ARIA roles
+  and keyboard navigation for accessibility. Open by double-click. Share by
+  email. No npm, no CDN, no internet required.
+- **GitHub Action** — ready-made action (`.github/action.yml`) for CI
+  integration in GitHub Actions workflows.
+- **Pre-commit hook generation** — `init-hooks` command generates a configured
+  `.pre-commit-config.yaml` for local quality gates.
 - **CI-native output** — JUnit XML (Jenkins), Code Quality JSON (GitLab),
   Service Messages (TeamCity), Step Summary + annotations (GitHub Actions).
 

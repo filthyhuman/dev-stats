@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dev-stats"
-version = "0.1.0"
+version = "0.2.0"
 description = "Repository analysis tool — code metrics, Git exploration, branch management, self-contained HTML dashboard."
 readme = "README.md"
 license = { file = "LICENSE" }
