@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from dev_stats.core.parsers.cpp_parser import CppParser
@@ -18,6 +19,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from dev_stats.core.parsers.abstract_parser import AbstractParser
+
+logger = logging.getLogger(__name__)
 
 
 class ParserRegistry:
@@ -78,16 +81,54 @@ class ParserRegistry:
         return languages
 
 
-def create_default_registry() -> ParserRegistry:
+def create_default_registry(*, use_tree_sitter: bool = True) -> ParserRegistry:
     """Create a :class:`ParserRegistry` with all built-in parsers registered.
+
+    When *use_tree_sitter* is ``True`` (the default) and ``tree-sitter-languages``
+    is installed, tree-sitter-backed parsers are preferred for Java and JavaScript.
+    Regex-based parsers are used as a fallback.
+
+    Args:
+        use_tree_sitter: Whether to prefer tree-sitter parsers when available.
 
     Returns:
         A registry with all language parsers.
     """
     registry = ParserRegistry()
     registry.register(PythonParser())
-    registry.register(JavaParser())
-    registry.register(JavaScriptParser())
+
+    # Java: prefer tree-sitter, fall back to regex
+    if use_tree_sitter:
+        try:
+            from dev_stats.core.parsers.java_ts_parser import JavaTreeSitterParser
+            from dev_stats.core.parsers.tree_sitter_base import _tree_sitter_available
+
+            if _tree_sitter_available():
+                registry.register(JavaTreeSitterParser())
+                logger.debug("Using tree-sitter Java parser")
+            else:
+                registry.register(JavaParser())
+        except ImportError:
+            registry.register(JavaParser())
+    else:
+        registry.register(JavaParser())
+
+    # JavaScript: prefer tree-sitter, fall back to regex
+    if use_tree_sitter:
+        try:
+            from dev_stats.core.parsers.javascript_ts_parser import JavaScriptTreeSitterParser
+            from dev_stats.core.parsers.tree_sitter_base import _tree_sitter_available
+
+            if _tree_sitter_available():
+                registry.register(JavaScriptTreeSitterParser())
+                logger.debug("Using tree-sitter JavaScript parser")
+            else:
+                registry.register(JavaScriptParser())
+        except ImportError:
+            registry.register(JavaScriptParser())
+    else:
+        registry.register(JavaScriptParser())
+
     registry.register(TypeScriptParser())
     registry.register(CppParser())
     registry.register(CSharpParser())

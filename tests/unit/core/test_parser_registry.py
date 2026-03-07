@@ -93,3 +93,48 @@ class TestSupportedLanguages:
         """Empty registry returns empty dict."""
         registry = ParserRegistry()
         assert registry.supported_languages() == {}
+
+
+class TestCreateDefaultRegistry:
+    """Tests for the create_default_registry factory."""
+
+    def test_default_includes_all_languages(self) -> None:
+        """Default registry includes all supported languages."""
+        from dev_stats.core.parser_registry import create_default_registry
+
+        registry = create_default_registry()
+        langs = registry.supported_languages()
+        assert "python" in langs
+        assert "java" in langs
+        assert "javascript" in langs
+        assert "typescript" in langs
+        assert "cpp" in langs
+        assert "csharp" in langs
+        assert "go" in langs
+
+    def test_no_tree_sitter_flag(self) -> None:
+        """Passing use_tree_sitter=False forces regex parsers."""
+        from dev_stats.core.parser_registry import create_default_registry
+        from dev_stats.core.parsers.java_parser import JavaParser
+        from dev_stats.core.parsers.javascript_parser import JavaScriptParser
+
+        registry = create_default_registry(use_tree_sitter=False)
+        java_parser = registry.get(".java")
+        js_parser = registry.get(".js")
+        assert isinstance(java_parser, JavaParser)
+        assert isinstance(js_parser, JavaScriptParser)
+
+    def test_tree_sitter_preferred_when_available(self) -> None:
+        """Tree-sitter parsers are used when available."""
+        from dev_stats.core.parser_registry import create_default_registry
+        from dev_stats.core.parsers.tree_sitter_base import _tree_sitter_available
+
+        if not _tree_sitter_available():
+            return
+
+        from dev_stats.core.parsers.java_ts_parser import JavaTreeSitterParser
+        from dev_stats.core.parsers.javascript_ts_parser import JavaScriptTreeSitterParser
+
+        registry = create_default_registry(use_tree_sitter=True)
+        assert isinstance(registry.get(".java"), JavaTreeSitterParser)
+        assert isinstance(registry.get(".js"), JavaScriptTreeSitterParser)
