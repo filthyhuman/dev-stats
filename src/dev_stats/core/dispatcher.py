@@ -57,6 +57,6 @@ class Dispatcher:
         for path in paths:
             try:
                 reports.append(self.parse(path))
-            except Exception:
+            except (SyntaxError, OSError, ValueError, UnicodeDecodeError):
                 logger.exception("Failed to parse %s", path)
         return reports

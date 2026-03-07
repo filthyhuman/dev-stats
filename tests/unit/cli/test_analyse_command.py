@@ -225,7 +225,7 @@ class TestAnalyseCommand:
         scanner = mock_pipeline.scanner_cls.return_value
         scanner.scan.return_value = [tmp_path / "a.py", tmp_path / "b.py"]
         dispatcher = mock_pipeline.dispatcher_cls.return_value
-        dispatcher.parse.side_effect = [RuntimeError("bad parse"), _make_file_report()]
+        dispatcher.parse.side_effect = [OSError("bad parse"), _make_file_report()]
 
         result = runner.invoke(app, ["analyse", str(tmp_path)])
         assert result.exit_code == 0

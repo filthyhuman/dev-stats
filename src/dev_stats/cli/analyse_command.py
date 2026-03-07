@@ -160,7 +160,7 @@ class AnalyseCommand:
                 for path in paths:
                     try:
                         file_reports.append(dispatcher.parse(path))
-                    except Exception:
+                    except (SyntaxError, OSError, ValueError, UnicodeDecodeError):
                         logger.exception("Failed to parse %s", path)
                     progress.advance(task)
             console.print(f"  Parsed {len(file_reports)} file(s)")
@@ -216,8 +216,11 @@ class AnalyseCommand:
                     branches_report = branch_analyzer.analyse()
                     progress.advance(task)
                 console.print("  Analysed git history")
-            except Exception:
+            except (subprocess.CalledProcessError, OSError, ValueError):
                 logger.warning("Git analysis failed; proceeding without git data", exc_info=True)
+                console.print(
+                    "[yellow]⚠ Git analysis unavailable — showing code metrics only[/yellow]"
+                )
 
             # Aggregate
             with Progress(
@@ -310,7 +313,7 @@ class AnalyseCommand:
         except FileNotFoundError as exc:
             console.print(f"[red]Error:[/red] {exc}")
             raise typer.Exit(code=1) from exc
-        except Exception:
+        except (ValueError, OSError, subprocess.CalledProcessError, TypeError):
             logger.exception("Analysis failed")
             console.print("[red]Analysis failed. See log for details.[/red]")
             raise typer.Exit(code=1) from None

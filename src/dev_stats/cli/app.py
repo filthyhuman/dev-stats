@@ -1,5 +1,8 @@
 """Typer application -- single entry point for all dev-stats commands."""
 
+from __future__ import annotations
+
+import logging
 from typing import Annotated
 
 import typer
@@ -35,8 +38,28 @@ def _main(
             is_eager=True,
         ),
     ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Show debug output."),
+    ] = False,
+    quiet: Annotated[
+        bool,
+        typer.Option("--quiet", "-q", help="Suppress all but errors."),
+    ] = False,
 ) -> None:
     """Dev-stats -- Git repository analysis and statistics tool."""
+    from rich.logging import RichHandler
+
+    if verbose and quiet:
+        msg = "--verbose and --quiet are mutually exclusive"
+        raise typer.BadParameter(msg)
+    level = logging.DEBUG if verbose else logging.ERROR if quiet else logging.WARNING
+    logging.basicConfig(
+        level=level,
+        format="%(message)s",
+        handlers=[RichHandler(rich_tracebacks=True, show_time=verbose)],
+        force=True,
+    )
 
 
 # Register the __call__ *method* (not the instance) so Typer can introspect

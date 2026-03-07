@@ -1,6 +1,9 @@
 """The ``gitlog`` sub-command."""
 
+from __future__ import annotations
+
 import logging
+import subprocess
 from pathlib import Path
 from typing import Annotated
 
@@ -111,7 +114,7 @@ class GitlogCommand:
         except FileNotFoundError as exc:
             console.print(f"[red]Error:[/red] {exc}")
             raise typer.Exit(code=1) from exc
-        except Exception:
+        except (subprocess.CalledProcessError, OSError, ValueError):
             logger.exception("Gitlog analysis failed")
             console.print("[red]Gitlog analysis failed. See log for details.[/red]")
             raise typer.Exit(code=1) from None
