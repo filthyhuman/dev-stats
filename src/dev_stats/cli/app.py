@@ -10,6 +10,7 @@ import typer
 from dev_stats.cli.analyse_command import AnalyseCommand
 from dev_stats.cli.branches_command import BranchesCommand
 from dev_stats.cli.gitlog_command import GitlogCommand
+from dev_stats.cli.init_hooks_command import InitHooksCommand
 from dev_stats.cli.version_callback import VersionCallback
 
 _version_callback = VersionCallback()
@@ -24,6 +25,7 @@ app = typer.Typer(
 _analyse_command = AnalyseCommand()
 _branches_command = BranchesCommand()
 _gitlog_command = GitlogCommand()
+_init_hooks_command = InitHooksCommand()
 
 
 @app.callback()
@@ -67,3 +69,4 @@ def _main(
 app.command(name="analyse")(_analyse_command.__call__)
 app.command(name="branches")(_branches_command.__call__)
 app.command(name="gitlog")(_gitlog_command.__call__)
+app.command(name="init-hooks")(_init_hooks_command.__call__)

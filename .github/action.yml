@@ -1,0 +1,80 @@
+name: 'dev-stats Analysis'
+description: 'Analyse a Git repository with dev-stats and upload the report as an artifact.'
+branding:
+  icon: 'bar-chart-2'
+  color: 'blue'
+
+inputs:
+  format:
+    description: 'Output format: json | csv | xml | badges | dashboard | all'
+    required: false
+    default: 'dashboard'
+  fail-on-violations:
+    description: 'Exit non-zero when quality violations are found'
+    required: false
+    default: 'false'
+  since:
+    description: 'Analyse commits since this date (e.g. 2024-01-01)'
+    required: false
+    default: ''
+  config:
+    description: 'Path to TOML config file'
+    required: false
+    default: ''
+  args:
+    description: 'Additional CLI arguments'
+    required: false
+    default: ''
+  python-version:
+    description: 'Python version to use'
+    required: false
+    default: '3.12'
+  artifact-name:
+    description: 'Name of the uploaded artifact'
+    required: false
+    default: 'dev-stats-report'
+  artifact-retention:
+    description: 'Artifact retention in days'
+    required: false
+    default: '30'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+
+    - name: Install dev-stats
+      shell: bash
+      run: uv pip install --system dev-stats
+
+    - name: Run dev-stats analysis
+      shell: bash
+      run: |
+        ARGS="analyse . --format ${{ inputs.format }} --output dev-stats-output"
+        if [ "${{ inputs.fail-on-violations }}" = "true" ]; then
+          ARGS="$ARGS --fail-on-violations"
+        fi
+        if [ -n "${{ inputs.since }}" ]; then
+          ARGS="$ARGS --since ${{ inputs.since }}"
+        fi
+        if [ -n "${{ inputs.config }}" ]; then
+          ARGS="$ARGS --config ${{ inputs.config }}"
+        fi
+        if [ -n "${{ inputs.args }}" ]; then
+          ARGS="$ARGS ${{ inputs.args }}"
+        fi
+        dev-stats $ARGS
+
+    - name: Upload report artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: dev-stats-output/
+        retention-days: ${{ inputs.artifact-retention }}
