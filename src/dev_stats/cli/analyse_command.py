@@ -182,48 +182,34 @@ class AnalyseCommand:
             patterns = None
             timeline = None
             try:
-                git_steps = 6
-                with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[bold]Analysing git history...[/bold]"),
-                    BarColumn(),
-                    TaskProgressColumn(),
-                    TextColumn("[dim]{task.completed}/{task.total}[/dim]"),
-                    console=console,
-                    transient=True,
-                ) as progress:
-                    task = progress.add_task("Git", total=git_steps)
-
+                with console.status("[bold]Harvesting commits...[/bold]") as status:
                     harvester = LogHarvester(repo_path)
                     commits = harvester.harvest(since=since)
-                    progress.advance(task)
 
                     if commits:
+                        status.update("[bold]Enriching commits...[/bold]")
                         enricher = CommitEnricher()
                         enriched = enricher.enrich(commits)
-                    progress.advance(task)
 
-                    if commits:
+                        status.update("[bold]Analysing contributors...[/bold]")
                         contributor_analyzer = ContributorAnalyzer()
                         contributors = contributor_analyzer.analyse(commits)
-                    progress.advance(task)
 
-                    if commits and enriched:
-                        detector = PatternDetector()
-                        patterns = detector.detect_all(commits, enriched)
-                    progress.advance(task)
+                        if enriched:
+                            status.update("[bold]Detecting patterns...[/bold]")
+                            detector = PatternDetector()
+                            patterns = detector.detect_all(commits, enriched)
 
-                    if commits:
+                        status.update("[bold]Building timeline...[/bold]")
                         builder = TimelineBuilder()
                         timeline = builder.loc_timeline(commits)
-                    progress.advance(task)
 
+                    status.update("[bold]Analysing branches...[/bold]")
                     branch_analyzer = BranchAnalyzer(
                         repo_path=repo_path,
                         config=analysis_config.branches,
                     )
                     branches_report = branch_analyzer.analyse()
-                    progress.advance(task)
                 console.print("  Analysed git history")
             except (subprocess.CalledProcessError, OSError, ValueError):
                 logger.warning("Git analysis failed; proceeding without git data", exc_info=True)
