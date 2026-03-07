@@ -252,6 +252,11 @@ a:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ------------------------------------------------------------------ */
 /* Filter bar                                                         */
 /* ------------------------------------------------------------------ */
@@ -411,6 +416,20 @@ a:hover {
   }
 }
 
+@media (max-width: 375px) {
+  .header__title {
+    font-size: 1.125rem;
+  }
+
+  .card__value {
+    font-size: 1.5rem;
+  }
+
+  .tabs {
+    flex-wrap: wrap;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Light mode                                                         */
 /* ------------------------------------------------------------------ */
@@ -458,6 +477,17 @@ a:hover {
 .theme-toggle:hover {
   color: var(--color-text);
   border-color: var(--color-text-muted);
+}
+
+/* Keyboard focus indicators */
+.tab:focus-visible,
+.sidebar__link:focus-visible,
+.theme-toggle:focus-visible,
+.btn:focus-visible,
+.chart-range-btn:focus-visible,
+.filter-bar__input:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 /* ------------------------------------------------------------------ */
@@ -577,6 +607,15 @@ a:hover {
   border-radius: var(--radius);
   background: var(--color-surface);
   opacity: 0.85;
+}
+
+/* Noscript fallback */
+.noscript-warning {
+  background: var(--color-warning);
+  color: #000;
+  padding: 1rem;
+  text-align: center;
+  font-weight: 600;
 }
 
 /* ------------------------------------------------------------------ */
