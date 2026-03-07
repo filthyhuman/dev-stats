@@ -80,6 +80,10 @@ ignore = ["D100","D104"]
 "src/dev_stats/core/parsers/tree_sitter_base.py" = ["ANN401"]
 "src/dev_stats/core/parsers/java_ts_parser.py" = ["ANN401"]
 "src/dev_stats/core/parsers/javascript_ts_parser.py" = ["ANN401"]
+"src/dev_stats/core/parsers/cpp_ts_parser.py" = ["ANN401"]
+"src/dev_stats/core/parsers/csharp_ts_parser.py" = ["ANN401"]
+"src/dev_stats/core/parsers/go_ts_parser.py" = ["ANN401"]
+"src/dev_stats/core/parsers/typescript_ts_parser.py" = ["ANN401"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

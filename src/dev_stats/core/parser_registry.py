@@ -85,8 +85,8 @@ def create_default_registry(*, use_tree_sitter: bool = True) -> ParserRegistry:
     """Create a :class:`ParserRegistry` with all built-in parsers registered.
 
     When *use_tree_sitter* is ``True`` (the default) and ``tree-sitter-languages``
-    is installed, tree-sitter-backed parsers are preferred for Java and JavaScript.
-    Regex-based parsers are used as a fallback.
+    is installed, tree-sitter-backed parsers are preferred for Java, JavaScript,
+    TypeScript, C++, C#, and Go.  Regex-based parsers are used as a fallback.
 
     Args:
         use_tree_sitter: Whether to prefer tree-sitter parsers when available.
@@ -129,9 +129,69 @@ def create_default_registry(*, use_tree_sitter: bool = True) -> ParserRegistry:
     else:
         registry.register(JavaScriptParser())
 
-    registry.register(TypeScriptParser())
-    registry.register(CppParser())
-    registry.register(CSharpParser())
-    registry.register(GoParser())
+    # TypeScript: prefer tree-sitter, fall back to regex
+    if use_tree_sitter:
+        try:
+            from dev_stats.core.parsers.tree_sitter_base import _tree_sitter_available
+            from dev_stats.core.parsers.typescript_ts_parser import TypeScriptTreeSitterParser
+
+            if _tree_sitter_available():
+                registry.register(TypeScriptTreeSitterParser())
+                logger.debug("Using tree-sitter TypeScript parser")
+            else:
+                registry.register(TypeScriptParser())
+        except ImportError:
+            registry.register(TypeScriptParser())
+    else:
+        registry.register(TypeScriptParser())
+
+    # C++: prefer tree-sitter, fall back to regex
+    if use_tree_sitter:
+        try:
+            from dev_stats.core.parsers.cpp_ts_parser import CppTreeSitterParser
+            from dev_stats.core.parsers.tree_sitter_base import _tree_sitter_available
+
+            if _tree_sitter_available():
+                registry.register(CppTreeSitterParser())
+                logger.debug("Using tree-sitter C++ parser")
+            else:
+                registry.register(CppParser())
+        except ImportError:
+            registry.register(CppParser())
+    else:
+        registry.register(CppParser())
+
+    # C#: prefer tree-sitter, fall back to regex
+    if use_tree_sitter:
+        try:
+            from dev_stats.core.parsers.csharp_ts_parser import CSharpTreeSitterParser
+            from dev_stats.core.parsers.tree_sitter_base import _tree_sitter_available
+
+            if _tree_sitter_available():
+                registry.register(CSharpTreeSitterParser())
+                logger.debug("Using tree-sitter C# parser")
+            else:
+                registry.register(CSharpParser())
+        except ImportError:
+            registry.register(CSharpParser())
+    else:
+        registry.register(CSharpParser())
+
+    # Go: prefer tree-sitter, fall back to regex
+    if use_tree_sitter:
+        try:
+            from dev_stats.core.parsers.go_ts_parser import GoTreeSitterParser
+            from dev_stats.core.parsers.tree_sitter_base import _tree_sitter_available
+
+            if _tree_sitter_available():
+                registry.register(GoTreeSitterParser())
+                logger.debug("Using tree-sitter Go parser")
+            else:
+                registry.register(GoParser())
+        except ImportError:
+            registry.register(GoParser())
+    else:
+        registry.register(GoParser())
+
     registry.register(ObjectiveCParser())
     return registry

@@ -115,14 +115,20 @@ class TestCreateDefaultRegistry:
     def test_no_tree_sitter_flag(self) -> None:
         """Passing use_tree_sitter=False forces regex parsers."""
         from dev_stats.core.parser_registry import create_default_registry
+        from dev_stats.core.parsers.cpp_parser import CppParser
+        from dev_stats.core.parsers.csharp_parser import CSharpParser
+        from dev_stats.core.parsers.go_parser import GoParser
         from dev_stats.core.parsers.java_parser import JavaParser
         from dev_stats.core.parsers.javascript_parser import JavaScriptParser
+        from dev_stats.core.parsers.typescript_parser import TypeScriptParser
 
         registry = create_default_registry(use_tree_sitter=False)
-        java_parser = registry.get(".java")
-        js_parser = registry.get(".js")
-        assert isinstance(java_parser, JavaParser)
-        assert isinstance(js_parser, JavaScriptParser)
+        assert isinstance(registry.get(".java"), JavaParser)
+        assert isinstance(registry.get(".js"), JavaScriptParser)
+        assert isinstance(registry.get(".ts"), TypeScriptParser)
+        assert isinstance(registry.get(".cpp"), CppParser)
+        assert isinstance(registry.get(".cs"), CSharpParser)
+        assert isinstance(registry.get(".go"), GoParser)
 
     def test_tree_sitter_preferred_when_available(self) -> None:
         """Tree-sitter parsers are used when available."""
@@ -132,9 +138,17 @@ class TestCreateDefaultRegistry:
         if not _tree_sitter_available():
             return
 
+        from dev_stats.core.parsers.cpp_ts_parser import CppTreeSitterParser
+        from dev_stats.core.parsers.csharp_ts_parser import CSharpTreeSitterParser
+        from dev_stats.core.parsers.go_ts_parser import GoTreeSitterParser
         from dev_stats.core.parsers.java_ts_parser import JavaTreeSitterParser
         from dev_stats.core.parsers.javascript_ts_parser import JavaScriptTreeSitterParser
+        from dev_stats.core.parsers.typescript_ts_parser import TypeScriptTreeSitterParser
 
         registry = create_default_registry(use_tree_sitter=True)
         assert isinstance(registry.get(".java"), JavaTreeSitterParser)
         assert isinstance(registry.get(".js"), JavaScriptTreeSitterParser)
+        assert isinstance(registry.get(".ts"), TypeScriptTreeSitterParser)
+        assert isinstance(registry.get(".cpp"), CppTreeSitterParser)
+        assert isinstance(registry.get(".cs"), CSharpTreeSitterParser)
+        assert isinstance(registry.get(".go"), GoTreeSitterParser)
