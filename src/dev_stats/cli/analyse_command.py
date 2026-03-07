@@ -80,6 +80,14 @@ class AnalyseCommand:
             int,
             typer.Option("--top", "-n", help="Number of top items to show."),
         ] = 20,
+        sort: Annotated[
+            str | None,
+            typer.Option(
+                "--sort",
+                "-s",
+                help="Sort files table by: lines | code | complexity | name.",
+            ),
+        ] = None,
         lang: Annotated[
             list[str] | None,
             typer.Option("--lang", "-l", help="Language filter."),
@@ -114,6 +122,7 @@ class AnalyseCommand:
             config: Optional TOML config file path.
             exclude: Glob patterns to exclude.
             top: Number of top items in tables.
+            sort: Sort key for the files table (lines, code, complexity, name).
             lang: Language filter list.
             diff: Branch or commit to diff against.
             fail_on_violations: Whether to fail on violations.
@@ -253,6 +262,7 @@ class AnalyseCommand:
                     report=report,
                     config=analysis_config,
                     console=console,
+                    sort_key=sort,
                 )
                 reporter.export(output_dir=repo_path)
 
@@ -317,6 +327,29 @@ class AnalyseCommand:
             logger.exception("Analysis failed")
             console.print("[red]Analysis failed. See log for details.[/red]")
             raise typer.Exit(code=1) from None
+
+        if watch:
+            from dev_stats.cli.watch_runner import WatchRunner
+
+            watch_runner = WatchRunner(
+                repo_path=repo_path,
+                run_analysis=lambda: self(
+                    repo,
+                    output=output,
+                    fmt=fmt,
+                    ci=ci,
+                    config=config,
+                    exclude=exclude,
+                    top=top,
+                    sort=sort,
+                    lang=lang,
+                    diff=diff,
+                    fail_on_violations=fail_on_violations,
+                    watch=False,
+                    since=since,
+                ),
+            )
+            watch_runner.run()
 
         if _fail_exit:
             raise typer.Exit(code=1)

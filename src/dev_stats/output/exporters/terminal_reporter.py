@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 from rich.panel import Panel
@@ -29,6 +29,7 @@ class TerminalReporter(AbstractExporter):
         report: RepoReport,
         config: AnalysisConfig,
         console: Console | None = None,
+        sort_key: str | None = None,
     ) -> None:
         """Initialise the terminal reporter.
 
@@ -36,10 +37,12 @@ class TerminalReporter(AbstractExporter):
             report: The analysis report to display.
             config: Analysis configuration.
             console: Optional Rich console (defaults to stdout).
+            sort_key: Column to sort the files table by (lines, code, complexity, name).
         """
         super().__init__(report, config)
         self._console = console or Console()
         self._top_n = config.output.top_n
+        self._sort_key = sort_key
 
     def export(self, output_dir: Path) -> list[Path]:
         """Print the report to the terminal.
@@ -105,8 +108,19 @@ class TerminalReporter(AbstractExporter):
         self._console.print(table)
 
     def _print_top_files(self) -> None:
-        """Print top-N files by total lines."""
-        files = sorted(self._report.files, key=lambda f: f.total_lines, reverse=True)
+        """Print top-N files by the configured sort key."""
+        sort_funcs: dict[str, Any] = {
+            "lines": lambda f: f.total_lines,
+            "code": lambda f: f.code_lines,
+            "complexity": lambda f: max(
+                (m.cyclomatic_complexity for c in f.classes for m in c.methods),
+                default=0,
+            ),
+            "name": lambda f: str(f.path),
+        }
+        key_func = sort_funcs.get(self._sort_key or "lines", sort_funcs["lines"])
+        reverse = self._sort_key != "name"  # name sorts ascending
+        files = sorted(self._report.files, key=key_func, reverse=reverse)
         top = files[: self._top_n]
         if not top:
             return
