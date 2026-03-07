@@ -18,6 +18,12 @@ _CC_KEYWORDS = re.compile(
 # Tokens that increase cognitive complexity with extra weight for nesting.
 _COGNITIVE_KEYWORDS = re.compile(r"\b(?:if|elif|else\s+if|for|foreach|while|catch|except)\b")
 
+# Else/finally branches add +1 flat (no nesting weight).
+_ELSE_KEYWORDS = re.compile(r"\b(?:else|finally)\b")
+
+# Boolean operator sequences add +1 per sequence.
+_BOOL_OPS = re.compile(r"&&|\|\||\band\b|\bor\b")
+
 _NESTING_OPENERS = re.compile(r"\b(?:if|for|foreach|while|try|switch|match)\b")
 
 # Halstead operator / operand approximation tokens.
@@ -50,7 +56,9 @@ class ComplexityCalculator:
         """Compute approximate cognitive complexity.
 
         Increments for each control-flow break, with extra weight for
-        nesting depth at the point of the break.
+        nesting depth at the point of the break.  Also counts ``else``/
+        ``finally`` branches (+1 flat) and boolean operator sequences (+1
+        per sequence per line).
 
         Args:
             source: Source code text.
@@ -62,12 +70,20 @@ class ComplexityCalculator:
         nesting = 0
         for line in source.splitlines():
             stripped = line.strip()
-            # Track nesting via braces / indentation heuristic
+            # Track nesting via braces
             nesting += stripped.count("{") - stripped.count("}")
             nesting = max(0, nesting)
 
             for _match in _COGNITIVE_KEYWORDS.finditer(stripped):
                 score += 1 + nesting
+
+            # else/finally: +1 flat
+            for _match in _ELSE_KEYWORDS.finditer(stripped):
+                score += 1
+
+            # Boolean operators: +1 per line that contains them
+            if _BOOL_OPS.search(stripped):
+                score += 1
         return score
 
     def nesting_depth(self, source: str) -> int:

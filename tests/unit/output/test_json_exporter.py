@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+
+import pytest
 
 from dev_stats.config.analysis_config import AnalysisConfig
 from dev_stats.core.models import (
+    ChangeType,
     ClassReport,
+    CommitRecord,
+    CouplingReport,
+    CoverageReport,
+    DuplicationReport,
     FileReport,
     LanguageSummary,
     MethodReport,
@@ -176,3 +184,132 @@ class TestJsonExporterSummary:
         data = json.loads((out_dir / "dev-stats-summary.json").read_text())
         assert len(data["languages"]) == 1
         assert data["languages"][0]["language"] == "python"
+
+    def test_summary_with_duplication(self, tmp_path: Path) -> None:
+        """Summary includes duplication_ratio when duplication data present."""
+        report = _make_report(tmp_path)
+        report = RepoReport(
+            root=report.root,
+            files=report.files,
+            modules=report.modules,
+            languages=report.languages,
+            duplication=DuplicationReport(duplication_ratio=0.05),
+        )
+        config = AnalysisConfig.load(repo_path=tmp_path)
+        exporter = JsonExporter(report=report, config=config, summary=True)
+
+        out_dir = tmp_path / "output"
+        exporter.export(out_dir)
+
+        data = json.loads((out_dir / "dev-stats-summary.json").read_text())
+        assert data["duplication_ratio"] == 0.05
+
+    def test_summary_with_coverage(self, tmp_path: Path) -> None:
+        """Summary includes coverage_ratio when coverage data present."""
+        report = _make_report(tmp_path)
+        report = RepoReport(
+            root=report.root,
+            files=report.files,
+            modules=report.modules,
+            languages=report.languages,
+            coverage=CoverageReport(overall_ratio=0.93),
+        )
+        config = AnalysisConfig.load(repo_path=tmp_path)
+        exporter = JsonExporter(report=report, config=config, summary=True)
+
+        out_dir = tmp_path / "output"
+        exporter.export(out_dir)
+
+        data = json.loads((out_dir / "dev-stats-summary.json").read_text())
+        assert data["coverage_ratio"] == 0.93
+
+    def test_summary_with_coupling(self, tmp_path: Path) -> None:
+        """Summary includes coupling_modules count when coupling data present."""
+        report = _make_report(tmp_path)
+        report = RepoReport(
+            root=report.root,
+            files=report.files,
+            modules=report.modules,
+            languages=report.languages,
+            coupling=CouplingReport(modules=()),
+        )
+        config = AnalysisConfig.load(repo_path=tmp_path)
+        exporter = JsonExporter(report=report, config=config, summary=True)
+
+        out_dir = tmp_path / "output"
+        exporter.export(out_dir)
+
+        data = json.loads((out_dir / "dev-stats-summary.json").read_text())
+        assert data["coupling_modules"] == 0
+
+
+class TestJsonExporterConversion:
+    """Tests for value conversion edge cases."""
+
+    def test_datetime_serialised_as_iso(self, tmp_path: Path) -> None:
+        """Datetime fields are serialised as ISO 8601 strings."""
+        dt = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
+        commit = CommitRecord(
+            sha="abc123",
+            author_name="Test",
+            author_email="test@test.com",
+            authored_date=dt,
+            committer_name="Test",
+            committer_email="test@test.com",
+            committed_date=dt,
+            message="test",
+        )
+        report = RepoReport(
+            root=tmp_path,
+            files=(),
+            commits=(commit,),
+        )
+        config = AnalysisConfig.load(repo_path=tmp_path)
+        exporter = JsonExporter(report=report, config=config)
+
+        out_dir = tmp_path / "output"
+        exporter.export(out_dir)
+
+        data = json.loads((out_dir / "dev-stats.json").read_text())
+        assert data["commits"][0]["authored_date"] == "2024-06-15T12:00:00+00:00"
+
+    def test_enum_serialised_as_value(self, tmp_path: Path) -> None:
+        """Enum fields are serialised as their .value string."""
+        from dev_stats.core.models import FileChange
+
+        change = FileChange(path="x.py", change_type=ChangeType.ADDED)
+        commit = CommitRecord(
+            sha="abc123",
+            author_name="Test",
+            author_email="test@test.com",
+            authored_date=datetime(2024, 1, 1, tzinfo=UTC),
+            committer_name="Test",
+            committer_email="test@test.com",
+            committed_date=datetime(2024, 1, 1, tzinfo=UTC),
+            message="test",
+            files=(change,),
+        )
+        report = RepoReport(root=tmp_path, files=(), commits=(commit,))
+        config = AnalysisConfig.load(repo_path=tmp_path)
+        exporter = JsonExporter(report=report, config=config)
+
+        out_dir = tmp_path / "output"
+        exporter.export(out_dir)
+
+        data = json.loads((out_dir / "dev-stats.json").read_text())
+        assert data["commits"][0]["files"][0]["change_type"] == "added"
+
+    def test_json_default_raises_for_unknown(self) -> None:
+        """_json_default raises TypeError for unhandled types."""
+        with pytest.raises(TypeError, match="not JSON serializable"):
+            JsonExporter._json_default(object())
+
+    def test_dataclass_to_dict_raises_for_non_dataclass(self) -> None:
+        """_dataclass_to_dict raises TypeError for non-dataclass input."""
+        with pytest.raises(TypeError, match="Expected a dataclass"):
+            JsonExporter._dataclass_to_dict("not a dataclass")
+
+    def test_convert_unknown_type_falls_back_to_str(self, tmp_path: Path) -> None:
+        """Unknown types in _convert_value fall back to str()."""
+        result = JsonExporter._convert_value(frozenset({1, 2}))
+        assert isinstance(result, str)

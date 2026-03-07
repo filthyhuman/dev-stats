@@ -55,6 +55,167 @@ def _cyclomatic_complexity(node: ast.AST) -> int:
     return complexity
 
 
+def _cognitive_complexity(node: ast.AST) -> int:
+    """Compute cognitive complexity for a function/method node.
+
+    Follows the SonarSource specification:
+
+    * **+1** for each flow-breaking structure (``if``, ``elif``, ``for``,
+      ``while``, ``except``).
+    * **+1 nesting increment** for each level of nesting when a flow-break
+      is encountered inside a nested block.
+    * **+1** for each ``else``, ``finally`` branch.
+    * **+1** for each boolean operator sequence (``and``/``or``), counting
+      one per *sequence* of identical operators, plus one for each switch
+      between different operators.
+    * **+1** for recursion (calling the function's own name).
+
+    Args:
+        node: An ``ast.FunctionDef`` or ``ast.AsyncFunctionDef``.
+
+    Returns:
+        The cognitive complexity score (minimum 0).
+    """
+    func_name = getattr(node, "name", "")
+    score = 0
+
+    def _walk(n: ast.AST, nesting: int) -> None:
+        nonlocal score
+
+        for child in ast.iter_child_nodes(n):
+            increment = 0
+            nest_change = 0
+
+            # --- Flow-breaking structures: +1 + nesting ---
+            if isinstance(child, (ast.If, ast.For, ast.While)):
+                is_elif = isinstance(child, ast.If) and _is_elif(n, child)
+                if is_elif:
+                    # elif: +1 flat, no nesting increment
+                    increment = 1
+                else:
+                    increment = 1 + nesting
+                    nest_change = 1
+
+            elif isinstance(child, ast.IfExp):
+                # Ternary expression: ``x if cond else y``
+                increment = 1 + nesting
+                nest_change = 1
+
+            elif isinstance(child, ast.ExceptHandler):
+                increment = 1 + nesting
+                nest_change = 1
+
+            # --- Boolean operator sequences ---
+            elif isinstance(child, ast.BoolOp):
+                score += _bool_op_increment(child)
+                _walk(child, nesting)
+                continue
+
+            # --- Try: no nesting for handlers, walk body/handlers separately ---
+            elif isinstance(child, (ast.Try, ast.TryStar)):
+                if child.finalbody:
+                    score += 1
+                if child.orelse:
+                    score += 1
+                # Walk try body at current nesting (try does not add nesting).
+                # Score each except handler explicitly, then walk its body
+                # with nesting+1 (the handler itself is a nesting structure).
+                for stmt in child.body:
+                    _walk(stmt, nesting)
+                for handler in child.handlers:
+                    score += 1 + nesting
+                    _walk(handler, nesting + 1)
+                for stmt in child.orelse:
+                    _walk(stmt, nesting)
+                for stmt in child.finalbody:
+                    _walk(stmt, nesting)
+                continue
+
+            # --- With/Lambda/nested function: nesting only ---
+            elif isinstance(
+                child,
+                (ast.With, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda),
+            ):
+                nest_change = 1
+
+            # --- Recursion detection ---
+            elif isinstance(child, ast.Call):
+                if _is_recursive_call(child, func_name):
+                    score += 1
+
+            score += increment
+
+            # Check for else branches (+1 each, flat)
+            if isinstance(child, (ast.If, ast.For, ast.While)):
+                orelse = child.orelse
+                if orelse:
+                    first = orelse[0]
+                    is_elif_chain = (
+                        isinstance(child, ast.If) and isinstance(first, ast.If) and len(orelse) == 1
+                    )
+                    if not is_elif_chain:
+                        score += 1
+
+            if isinstance(child, ast.IfExp):
+                # The else branch of a ternary
+                score += 1
+
+            _walk(child, nesting + nest_change)
+
+    _walk(node, 0)
+    return score
+
+
+def _is_elif(parent: ast.AST, child: ast.If) -> bool:
+    """Return ``True`` if *child* is an ``elif`` branch of *parent*.
+
+    Args:
+        parent: The parent AST node.
+        child: An ``ast.If`` node.
+
+    Returns:
+        ``True`` when *child* is the sole element in *parent*'s ``orelse``.
+    """
+    orelse = getattr(parent, "orelse", None)
+    return orelse is not None and len(orelse) == 1 and orelse[0] is child
+
+
+def _bool_op_increment(node: ast.BoolOp) -> int:
+    """Compute the cognitive complexity increment for a boolean operation.
+
+    A sequence of the same operator (``a and b and c``) counts as +1.
+    Each switch between operators adds another +1.
+
+    Args:
+        node: An ``ast.BoolOp`` node.
+
+    Returns:
+        The increment value.
+    """
+    # A single BoolOp with N values = 1 sequence.
+    # Nested BoolOps with a different op = separate sequences handled
+    # when the walker reaches those child BoolOps.
+    return 1
+
+
+def _is_recursive_call(node: ast.Call, func_name: str) -> bool:
+    """Return ``True`` if *node* is a call to *func_name*.
+
+    Args:
+        node: An ``ast.Call`` node.
+        func_name: The name of the enclosing function.
+
+    Returns:
+        ``True`` for a recursive call.
+    """
+    if not func_name:
+        return False
+    func = node.func
+    if isinstance(func, ast.Name) and func.id == func_name:
+        return True
+    return isinstance(func, ast.Attribute) and func.attr == func_name
+
+
 def _nesting_depth(node: ast.AST, current: int = 0) -> int:
     """Compute maximum nesting depth inside *node*.
 
@@ -214,7 +375,7 @@ def _build_method_report(
         lines=lines,
         parameters=tuple(_extract_parameters(func_node)),
         cyclomatic_complexity=_cyclomatic_complexity(func_node),
-        cognitive_complexity=0,
+        cognitive_complexity=_cognitive_complexity(func_node),
         nesting_depth=_nesting_depth(func_node),
         is_constructor=func_node.name == "__init__",
         docstring=first_line,
