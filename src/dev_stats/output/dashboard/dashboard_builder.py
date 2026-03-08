@@ -21,6 +21,29 @@ logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = __file__.replace("dashboard_builder.py", "templates")
 
+# Language names that are not programming languages (shown separately).
+_NON_LANGUAGE_TYPES: frozenset[str] = frozenset(
+    {
+        "generic",
+        "text",
+        "markdown",
+        "restructuredtext",
+        "csv",
+        "svg",
+        "json",
+        "yaml",
+        "toml",
+        "xml",
+        "html",
+        "css",
+        "scss",
+        "less",
+        "ini",
+        "config",
+        "properties",
+    }
+)
+
 # Size thresholds in bytes.
 _WARN_SIZE_BYTES = 30 * 1024 * 1024  # 30 MB
 _ERROR_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
@@ -139,7 +162,7 @@ class DashboardBuilder(AbstractExporter):
         total_functions = sum(f.num_functions for f in report.files)
         total_methods = sum(len(c.methods) for f in report.files for c in f.classes)
 
-        # Language breakdown
+        # Language breakdown — split into real languages and non-language types
         languages = [
             {
                 "name": lang.language,
@@ -148,6 +171,29 @@ class DashboardBuilder(AbstractExporter):
                 "code_lines": lang.code_lines,
             }
             for lang in report.languages
+            if lang.language not in _NON_LANGUAGE_TYPES
+        ]
+
+        non_language_types = [
+            {
+                "name": lang.language,
+                "file_count": lang.file_count,
+                "total_lines": lang.total_lines,
+                "code_lines": lang.code_lines,
+            }
+            for lang in report.languages
+            if lang.language in _NON_LANGUAGE_TYPES
+        ]
+
+        # Non-language files grouped by file extension
+        non_lang_by_ext: dict[str, int] = {}
+        for f in report.files:
+            if f.language in _NON_LANGUAGE_TYPES:
+                ext = f.path.suffix or f.path.name
+                non_lang_by_ext[ext] = non_lang_by_ext.get(ext, 0) + 1
+        ext_items = sorted(non_lang_by_ext.items(), key=lambda x: x[1], reverse=True)
+        non_language_extensions: list[dict[str, object]] = [
+            {"ext": ext, "count": count} for ext, count in ext_items
         ]
 
         # Commit stats
@@ -182,8 +228,10 @@ class DashboardBuilder(AbstractExporter):
             "branch_count": branch_count,
             "contributor_count": contributor_count,
             "pattern_count": pattern_count,
-            "language_count": len(report.languages),
+            "language_count": len(languages),
             "languages": languages,
+            "non_language_types": non_language_types,
+            "non_language_extensions": non_language_extensions,
             # Flags for conditional sections
             "has_commits": report.commits is not None,
             "has_branches": report.branches_report is not None,
@@ -193,6 +241,7 @@ class DashboardBuilder(AbstractExporter):
             "has_duplication": report.duplication is not None,
             "has_coupling": report.coupling is not None,
             "has_churn": report.file_churn is not None,
+            "has_non_language_files": len(non_language_extensions) > 0,
         }
 
     @staticmethod

@@ -542,11 +542,20 @@ class LazyRenderer {
     return tr;
   }
 
-  /** Render the Languages tab chart from data chunks. */
+  /** Render the Languages tab charts from data chunks. */
   static _renderLanguages(data) {
     const languages = data.languages;
     if (!languages) return;
-    ChartRenderer.langBar("chart-lang-bar", languages);
+
+    // Filter out non-language types for the bar chart
+    const nonLangTypes = (window.__devstats_non_lang_types || []).map((t) => t.name || t);
+    const nonLangSet = new Set(nonLangTypes);
+    const realLangs = languages.filter((l) => !nonLangSet.has(l.name || l.language || ""));
+    ChartRenderer.langBar("chart-lang-bar", realLangs);
+
+    // Render non-language extension donut in the Languages tab
+    const nonLangExts = window.__devstats_non_lang_exts || [];
+    ChartRenderer.nonLangDonut("chart-nonlang-ext-donut", nonLangExts);
   }
 
   /** Render the Files tab from data chunks. */
@@ -1185,18 +1194,19 @@ class ChartRenderer {
   }
 
   /**
-   * Render a doughnut chart of language distribution.
+   * Render a doughnut chart with percentage labels in the legend.
    * @param {string} canvasId
-   * @param {Array} languages  [{name, file_count, total_lines, code_lines}]
+   * @param {Array} labels
+   * @param {Array} data
+   * @param {number} [colorOffset=0]  Offset into the palette for colour cycling
    */
-  static langDonut(canvasId, languages) {
+  static _donutWithPercent(canvasId, labels, data, colorOffset = 0) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas || !languages || languages.length === 0) return;
+    if (!canvas || !labels || labels.length === 0) return;
     const { text } = ChartRenderer._defaults();
 
-    const labels = languages.map((l) => l.name || l.language || "Unknown");
-    const data = languages.map((l) => l.code_lines || l.total_lines || 0);
-    const colors = labels.map((_, i) => ChartRenderer._color(i));
+    const total = data.reduce((s, v) => s + v, 0);
+    const colors = labels.map((_, i) => ChartRenderer._color(i + colorOffset));
 
     new Chart(canvas, {
       type: "doughnut",
@@ -1208,10 +1218,55 @@ class ChartRenderer {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: "right", labels: { color: text, padding: 12 } },
+          legend: {
+            position: "right",
+            labels: {
+              color: text,
+              padding: 12,
+              generateLabels(chart) {
+                const ds = chart.data.datasets[0];
+                const labelColor = chart.options.plugins.legend.labels.color || text;
+                return chart.data.labels.map((label, i) => {
+                  const pct = total > 0 ? ((ds.data[i] / total) * 100).toFixed(1) : "0.0";
+                  return {
+                    text: `${label}  ${pct}%`,
+                    fontColor: labelColor,
+                    fillStyle: ds.backgroundColor[i],
+                    strokeStyle: ds.backgroundColor[i],
+                    hidden: false,
+                    index: i,
+                  };
+                });
+              },
+            },
+          },
         },
       },
     });
+  }
+
+  /**
+   * Render a doughnut chart of language distribution.
+   * @param {string} canvasId
+   * @param {Array} languages  [{name, file_count, total_lines, code_lines}]
+   */
+  static langDonut(canvasId, languages) {
+    if (!languages || languages.length === 0) return;
+    const labels = languages.map((l) => l.name || l.language || "Unknown");
+    const data = languages.map((l) => l.code_lines || l.total_lines || 0);
+    ChartRenderer._donutWithPercent(canvasId, labels, data);
+  }
+
+  /**
+   * Render a doughnut chart of non-language file types by extension.
+   * @param {string} canvasId
+   * @param {Array} extensions  [{ext, count}]
+   */
+  static nonLangDonut(canvasId, extensions) {
+    if (!extensions || extensions.length === 0) return;
+    const labels = extensions.map((e) => e.ext || "other");
+    const data = extensions.map((e) => e.count || 0);
+    ChartRenderer._donutWithPercent(canvasId, labels, data, 5);
   }
 
   /** @type {Chart|null} Active LOC timeline chart instance. */
@@ -1650,7 +1705,19 @@ document.addEventListener("DOMContentLoaded", () => {
   (async () => {
     const data = await DataLoader.loadAll();
     LazyRenderer._data = data;
-    ChartRenderer.langDonut("chart-lang-donut", data.languages);
+
+    // Filter out non-language types from the language donut
+    const nonLangTypes = (window.__devstats_non_lang_types || []).map((t) => t.name || t);
+    const nonLangSet = new Set(nonLangTypes);
+    const realLangs = (data.languages || []).filter(
+      (l) => !nonLangSet.has(l.name || l.language || "")
+    );
+    ChartRenderer.langDonut("chart-lang-donut", realLangs);
+
+    // Render non-language file types chart
+    const nonLangExts = window.__devstats_non_lang_exts || [];
+    ChartRenderer.nonLangDonut("chart-nonlang-donut", nonLangExts);
+
     ChartRenderer.locTimeline("chart-loc-timeline", data.timeline);
   })();
 });

@@ -92,6 +92,16 @@
         </div>
       </div>
 
+      <!-- Non-language file types donut chart -->
+      {% if has_non_language_files %}
+      <div class="card">
+        <div class="card__title">Non-Language File Types</div>
+        <div class="chart-container">
+          <canvas id="chart-nonlang-donut"></canvas>
+        </div>
+      </div>
+      {% endif %}
+
       <!-- LOC over time chart placeholder -->
       {% if has_commits %}
       <div class="card">
@@ -149,6 +159,40 @@
           <canvas id="chart-lang-bar"></canvas>
         </div>
       </div>
+
+      {% if has_non_language_files %}
+      <!-- Non-language file types table -->
+      <div class="card">
+        <div class="card__title">Non-Language File Types</div>
+        <table id="table-nonlang" class="data-table">
+          <thead>
+            <tr>
+              <th data-sort-type="string">Type</th>
+              <th data-sort-type="integer" data-default-desc="true">Files</th>
+              <th data-sort-type="integer" data-default-desc="true">Total Lines</th>
+              <th data-sort-type="integer" data-default-desc="true">Code Lines</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for nlt in non_language_types %}
+            <tr>
+              <td>{{ nlt.name }}</td>
+              <td class="num">{{ nlt.file_count }}</td>
+              <td class="num">{{ nlt.total_lines }}</td>
+              <td class="num">{{ nlt.code_lines }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card__title">Non-Language Files by Extension</div>
+        <div class="chart-container">
+          <canvas id="chart-nonlang-ext-donut"></canvas>
+        </div>
+      </div>
+      {% endif %}
     </section>
 
     <!-- ============================================================ -->
@@ -563,6 +607,12 @@
 
 <!-- Chart.js -->
 <script>{{ inline_chart_js }}</script>
+
+<!-- Non-language type filter and extension data for charts -->
+<script>
+window.__devstats_non_lang_types = {{ non_language_types | tojson }};
+window.__devstats_non_lang_exts = {{ non_language_extensions | tojson }};
+</script>
 
 <!-- Dashboard application logic -->
 <script>{{ inline_app_js }}</script>

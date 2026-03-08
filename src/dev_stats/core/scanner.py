@@ -18,6 +18,102 @@ logger = logging.getLogger(__name__)
 # Patterns that are always excluded regardless of configuration.
 _ALWAYS_EXCLUDED: tuple[str, ...] = (".git", "__pycache__", "*.pyc")
 
+# Binary / non-source extensions excluded from analysis.
+_BINARY_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        # Images
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bmp",
+        ".ico",
+        ".svg",
+        ".webp",
+        ".tiff",
+        ".tif",
+        ".psd",
+        ".ai",
+        ".eps",
+        # Audio / Video
+        ".mp3",
+        ".mp4",
+        ".wav",
+        ".ogg",
+        ".flac",
+        ".avi",
+        ".mov",
+        ".mkv",
+        ".wmv",
+        ".m4a",
+        ".m4v",
+        ".aac",
+        ".wma",
+        # Archives
+        ".zip",
+        ".tar",
+        ".gz",
+        ".bz2",
+        ".xz",
+        ".7z",
+        ".rar",
+        ".dmg",
+        ".iso",
+        ".pkg",
+        ".deb",
+        ".rpm",
+        # Compiled / object
+        ".o",
+        ".obj",
+        ".so",
+        ".dylib",
+        ".dll",
+        ".a",
+        ".lib",
+        ".exe",
+        ".class",
+        ".jar",
+        ".war",
+        ".ear",
+        ".whl",
+        ".egg",
+        # Fonts
+        ".ttf",
+        ".otf",
+        ".woff",
+        ".woff2",
+        ".eot",
+        # Documents
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx",
+        # Data / databases
+        ".sqlite",
+        ".db",
+        ".sqlite3",
+        ".mdb",
+        # Game / texture / asset formats
+        ".ccz",
+        ".pvr",
+        ".tps",
+        ".pes",
+        ".fnt",
+        ".plist",
+        # OS metadata
+        ".DS_Store",
+        "Thumbs.db",
+        # Misc binary
+        ".bin",
+        ".dat",
+        ".pyc",
+        ".pyo",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ProgressEvent:
@@ -109,6 +205,10 @@ class Scanner:
         Returns:
             ``True`` if the path should be excluded.
         """
+        # Fast-path: skip known binary extensions.
+        if path.suffix.lower() in _BINARY_EXTENSIONS or path.name in _BINARY_EXTENSIONS:
+            return True
+
         path_str = str(path)
         parts = path.parts
         for pattern in self._exclude_patterns:
