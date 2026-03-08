@@ -196,6 +196,17 @@ class DashboardBuilder(AbstractExporter):
             {"ext": ext, "count": count} for ext, count in ext_items
         ]
 
+        # Language files grouped by (extension, language) for file-type donut
+        lang_by_ext: dict[tuple[str, str], int] = {}
+        for f in report.files:
+            if f.language not in _NON_LANGUAGE_TYPES:
+                ext = f.path.suffix or f.path.name
+                lang_by_ext[(ext, f.language)] = lang_by_ext.get((ext, f.language), 0) + 1
+        lang_ext_items = sorted(lang_by_ext.items(), key=lambda x: x[1], reverse=True)
+        language_file_types: list[dict[str, object]] = [
+            {"label": f"{ext} ({lang})", "count": count} for (ext, lang), count in lang_ext_items
+        ]
+
         # Commit stats
         commit_count = len(report.commits) if report.commits else 0
         branch_count = report.branches_report.total_branches if report.branches_report else 0
@@ -232,6 +243,7 @@ class DashboardBuilder(AbstractExporter):
             "languages": languages,
             "non_language_types": non_language_types,
             "non_language_extensions": non_language_extensions,
+            "language_file_types": language_file_types,
             # Flags for conditional sections
             "has_commits": report.commits is not None,
             "has_branches": report.branches_report is not None,

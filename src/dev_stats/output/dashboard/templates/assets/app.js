@@ -1194,19 +1194,30 @@ class ChartRenderer {
   }
 
   /**
+   * Format a number with locale-aware thousand separators.
+   * @param {number} n
+   * @returns {string}
+   */
+  static _fmtNum(n) {
+    return n.toLocaleString("en-US");
+  }
+
+  /**
    * Render a doughnut chart with percentage labels in the legend.
    * @param {string} canvasId
    * @param {Array} labels
    * @param {Array} data
+   * @param {string} [unit=""]  Unit label for the total header (e.g. "lines", "files")
    * @param {number} [colorOffset=0]  Offset into the palette for colour cycling
    */
-  static _donutWithPercent(canvasId, labels, data, colorOffset = 0) {
+  static _donutWithPercent(canvasId, labels, data, unit = "", colorOffset = 0) {
     const canvas = document.getElementById(canvasId);
     if (!canvas || !labels || labels.length === 0) return;
     const { text } = ChartRenderer._defaults();
 
     const total = data.reduce((s, v) => s + v, 0);
     const colors = labels.map((_, i) => ChartRenderer._color(i + colorOffset));
+    const fmt = ChartRenderer._fmtNum;
 
     new Chart(canvas, {
       type: "doughnut",
@@ -1226,17 +1237,31 @@ class ChartRenderer {
               generateLabels(chart) {
                 const ds = chart.data.datasets[0];
                 const labelColor = chart.options.plugins.legend.labels.color || text;
-                return chart.data.labels.map((label, i) => {
+                const totalLabel = unit ? `All ${unit}` : "All";
+                const items = [
+                  {
+                    text: `${totalLabel} 100% (${fmt(total)})`,
+                    fontColor: labelColor,
+                    fillStyle: "transparent",
+                    strokeStyle: "transparent",
+                    lineWidth: 0,
+                    hidden: false,
+                    index: -1,
+                  },
+                ];
+                chart.data.labels.forEach((label, i) => {
                   const pct = total > 0 ? ((ds.data[i] / total) * 100).toFixed(1) : "0.0";
-                  return {
-                    text: `${label}  ${pct}%`,
+                  items.push({
+                    text: `${label}  ${pct}% (${fmt(ds.data[i])})`,
                     fontColor: labelColor,
                     fillStyle: ds.backgroundColor[i],
                     strokeStyle: ds.backgroundColor[i],
+                    lineWidth: 1,
                     hidden: false,
                     index: i,
-                  };
+                  });
                 });
+                return items;
               },
             },
           },
@@ -1254,7 +1279,19 @@ class ChartRenderer {
     if (!languages || languages.length === 0) return;
     const labels = languages.map((l) => l.name || l.language || "Unknown");
     const data = languages.map((l) => l.code_lines || l.total_lines || 0);
-    ChartRenderer._donutWithPercent(canvasId, labels, data);
+    ChartRenderer._donutWithPercent(canvasId, labels, data, "code lines");
+  }
+
+  /**
+   * Render a doughnut chart of language file types by extension+language.
+   * @param {string} canvasId
+   * @param {Array} fileTypes  [{label, count}]
+   */
+  static langFileTypesDonut(canvasId, fileTypes) {
+    if (!fileTypes || fileTypes.length === 0) return;
+    const labels = fileTypes.map((ft) => ft.label || "other");
+    const data = fileTypes.map((ft) => ft.count || 0);
+    ChartRenderer._donutWithPercent(canvasId, labels, data, "files");
   }
 
   /**
@@ -1266,7 +1303,7 @@ class ChartRenderer {
     if (!extensions || extensions.length === 0) return;
     const labels = extensions.map((e) => e.ext || "other");
     const data = extensions.map((e) => e.count || 0);
-    ChartRenderer._donutWithPercent(canvasId, labels, data, 5);
+    ChartRenderer._donutWithPercent(canvasId, labels, data, "files", 5);
   }
 
   /** @type {Chart|null} Active LOC timeline chart instance. */
@@ -1713,6 +1750,10 @@ document.addEventListener("DOMContentLoaded", () => {
       (l) => !nonLangSet.has(l.name || l.language || "")
     );
     ChartRenderer.langDonut("chart-lang-donut", realLangs);
+
+    // Render language file types chart (by extension + language)
+    const langFileTypes = window.__devstats_lang_file_types || [];
+    ChartRenderer.langFileTypesDonut("chart-lang-filetypes", langFileTypes);
 
     // Render non-language file types chart
     const nonLangExts = window.__devstats_non_lang_exts || [];

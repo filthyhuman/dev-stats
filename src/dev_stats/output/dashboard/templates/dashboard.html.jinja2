@@ -84,11 +84,19 @@
         </div>
       </div>
 
-      <!-- Language donut chart placeholder -->
+      <!-- Language donut chart — lines of code -->
       <div class="card">
-        <div class="card__title">Language Distribution</div>
+        <div class="card__title">Language Distribution — Lines of Code</div>
         <div class="chart-container">
           <canvas id="chart-lang-donut"></canvas>
+        </div>
+      </div>
+
+      <!-- Language donut chart — file types by extension -->
+      <div class="card">
+        <div class="card__title">Language Distribution — File Types</div>
+        <div class="chart-container">
+          <canvas id="chart-lang-filetypes"></canvas>
         </div>
       </div>
 
@@ -612,6 +620,7 @@
 <script>
 window.__devstats_non_lang_types = {{ non_language_types | tojson }};
 window.__devstats_non_lang_exts = {{ non_language_extensions | tojson }};
+window.__devstats_lang_file_types = {{ language_file_types | tojson }};
 </script>
 
 <!-- Dashboard application logic -->
