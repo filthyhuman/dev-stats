@@ -155,6 +155,10 @@ class AbstractParser(abc.ABC):
 
         encoding = detect_encoding(path)
         try:
+            size_bytes = path.stat().st_size
+        except OSError:
+            size_bytes = 0
+        try:
             source = path.read_text(encoding=encoding, errors="replace")
         except OSError:
             logger.warning("Could not read file: %s", path)
@@ -165,6 +169,7 @@ class AbstractParser(abc.ABC):
                 code_lines=0,
                 blank_lines=0,
                 comment_lines=0,
+                size_bytes=size_bytes,
             )
 
         loc = count_loc(source, self.comment_prefixes)
@@ -179,6 +184,7 @@ class AbstractParser(abc.ABC):
             code_lines=loc.code,
             blank_lines=loc.blank,
             comment_lines=loc.comment,
+            size_bytes=size_bytes,
             classes=tuple(classes),
             functions=tuple(functions),
             imports=tuple(imports),

@@ -181,6 +181,7 @@ class FileReport:
         code_lines: Non-blank, non-comment lines.
         blank_lines: Blank lines.
         comment_lines: Comment-only lines.
+        size_bytes: File size in bytes.
         classes: Parsed classes.
         functions: Top-level functions (not methods).
         imports: Import statements.
@@ -192,6 +193,7 @@ class FileReport:
     code_lines: int
     blank_lines: int
     comment_lines: int
+    size_bytes: int = 0
     classes: tuple[ClassReport, ...] = ()
     functions: tuple[MethodReport, ...] = ()
     imports: tuple[str, ...] = ()

@@ -1210,14 +1210,52 @@ class ChartRenderer {
    * @param {string} [unit=""]  Unit label for the total header (e.g. "lines", "files")
    * @param {number} [colorOffset=0]  Offset into the palette for colour cycling
    */
+  /**
+   * Build an HTML legend element with a single-column layout.
+   * @param {Array} labels
+   * @param {Array} data
+   * @param {Array} colors
+   * @param {string} unit
+   * @param {function} fmtValue  Formatter for individual values
+   * @param {function} fmtTotal  Formatter for the total (defaults to fmtValue)
+   * @returns {HTMLDivElement}
+   */
+  static _buildHtmlLegend(labels, data, colors, unit, fmtValue, fmtTotal) {
+    const total = data.reduce((s, v) => s + v, 0);
+    const fmtT = fmtTotal || fmtValue;
+    const legend = document.createElement("div");
+    legend.className = "donut-legend";
+
+    const totalLabel = unit ? `All ${unit}` : "All";
+    const header = document.createElement("div");
+    header.className = "donut-legend__item donut-legend__item--header";
+    header.textContent = `${totalLabel} 100% (${fmtT(total)})`;
+    legend.appendChild(header);
+
+    labels.forEach((label, i) => {
+      const pct = total > 0 ? ((data[i] / total) * 100).toFixed(1) : "0.0";
+      const row = document.createElement("div");
+      row.className = "donut-legend__item";
+      const swatch = document.createElement("span");
+      swatch.className = "donut-legend__swatch";
+      swatch.style.backgroundColor = colors[i];
+      row.appendChild(swatch);
+      row.appendChild(document.createTextNode(`${label}  ${pct}% (${fmtValue(data[i])})`));
+      legend.appendChild(row);
+    });
+    return legend;
+  }
+
   static _donutWithPercent(canvasId, labels, data, unit = "", colorOffset = 0) {
     const canvas = document.getElementById(canvasId);
     if (!canvas || !labels || labels.length === 0) return;
-    const { text } = ChartRenderer._defaults();
 
-    const total = data.reduce((s, v) => s + v, 0);
     const colors = labels.map((_, i) => ChartRenderer._color(i + colorOffset));
     const fmt = ChartRenderer._fmtNum;
+
+    // Replace the chart-container with a flex wrapper holding canvas + HTML legend
+    const container = canvas.parentElement;
+    ChartRenderer._setupDonutLayout(container, canvas, labels, data, colors, unit, fmt);
 
     new Chart(canvas, {
       type: "doughnut",
@@ -1229,45 +1267,47 @@ class ChartRenderer {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: {
-            position: "right",
-            labels: {
-              color: text,
-              padding: 12,
-              generateLabels(chart) {
-                const ds = chart.data.datasets[0];
-                const labelColor = chart.options.plugins.legend.labels.color || text;
-                const totalLabel = unit ? `All ${unit}` : "All";
-                const items = [
-                  {
-                    text: `${totalLabel} 100% (${fmt(total)})`,
-                    fontColor: labelColor,
-                    fillStyle: "transparent",
-                    strokeStyle: "transparent",
-                    lineWidth: 0,
-                    hidden: false,
-                    index: -1,
-                  },
-                ];
-                chart.data.labels.forEach((label, i) => {
-                  const pct = total > 0 ? ((ds.data[i] / total) * 100).toFixed(1) : "0.0";
-                  items.push({
-                    text: `${label}  ${pct}% (${fmt(ds.data[i])})`,
-                    fontColor: labelColor,
-                    fillStyle: ds.backgroundColor[i],
-                    strokeStyle: ds.backgroundColor[i],
-                    lineWidth: 1,
-                    hidden: false,
-                    index: i,
-                  });
-                });
-                return items;
-              },
-            },
-          },
+          legend: { display: false },
         },
       },
     });
+  }
+
+  /**
+   * Set up a flex layout for a donut chart: canvas on the left, HTML legend on the right.
+   * @param {HTMLElement} container  The .chart-container element
+   * @param {HTMLCanvasElement} canvas
+   * @param {Array} labels
+   * @param {Array} data
+   * @param {Array} colors
+   * @param {string} unit
+   * @param {function} fmtValue
+   * @param {function} [fmtTotal]
+   */
+  static _setupDonutLayout(container, canvas, labels, data, colors, unit, fmtValue, fmtTotal) {
+    if (!container) return;
+    container.style.display = "flex";
+    container.style.flexDirection = "row";
+    container.style.alignItems = "flex-start";
+    container.style.justifyContent = "center";
+    container.style.maxHeight = "none";
+
+    // Canvas wrapper takes fixed width for the donut
+    const canvasWrap = document.createElement("div");
+    canvasWrap.style.width = "260px";
+    canvasWrap.style.minWidth = "200px";
+    canvasWrap.style.height = "260px";
+    canvasWrap.style.flexShrink = "0";
+    container.insertBefore(canvasWrap, canvas);
+    canvasWrap.appendChild(canvas);
+
+    const legend = ChartRenderer._buildHtmlLegend(labels, data, colors, unit, fmtValue, fmtTotal);
+    container.appendChild(legend);
+
+    // Height: 2-column legend needs ~half the rows; ensure at least donut height
+    const legendRows = Math.ceil(labels.length / 2);
+    const minHeight = Math.max(260, (legendRows + 1) * 24 + 20);
+    container.style.height = minHeight + "px";
   }
 
   /**
@@ -1304,6 +1344,54 @@ class ChartRenderer {
     const labels = extensions.map((e) => e.ext || "other");
     const data = extensions.map((e) => e.count || 0);
     ChartRenderer._donutWithPercent(canvasId, labels, data, "files", 5);
+  }
+
+  /**
+   * Format a byte count into a human-readable string.
+   * @param {number} bytes
+   * @returns {string}
+   */
+  static _fmtBytes(bytes) {
+    if (bytes === 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    const k = 1024;
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), units.length - 1);
+    const value = bytes / Math.pow(k, i);
+    return (i === 0 ? value.toString() : value.toFixed(1)) + " " + units[i];
+  }
+
+  /**
+   * Render a doughnut chart of non-language file sizes by extension.
+   * @param {string} canvasId
+   * @param {Array} sizes  [{ext, size}]  size in bytes
+   */
+  static nonLangSizesDonut(canvasId, sizes) {
+    if (!sizes || sizes.length === 0) return;
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+
+    const labels = sizes.map((e) => e.ext || "other");
+    const data = sizes.map((e) => e.size || 0);
+    const colors = labels.map((_, i) => ChartRenderer._color(i + 5));
+    const fmtB = ChartRenderer._fmtBytes;
+
+    const container = canvas.parentElement;
+    ChartRenderer._setupDonutLayout(container, canvas, labels, data, colors, "files", fmtB, fmtB);
+
+    new Chart(canvas, {
+      type: "doughnut",
+      data: {
+        labels,
+        datasets: [{ data, backgroundColor: colors, borderWidth: 0 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+        },
+      },
+    });
   }
 
   /** @type {Chart|null} Active LOC timeline chart instance. */
@@ -1758,6 +1846,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // Render non-language file types chart
     const nonLangExts = window.__devstats_non_lang_exts || [];
     ChartRenderer.nonLangDonut("chart-nonlang-donut", nonLangExts);
+
+    // Render non-language file sizes chart
+    const nonLangSizes = window.__devstats_non_lang_sizes || [];
+    ChartRenderer.nonLangSizesDonut("chart-nonlang-sizes", nonLangSizes);
 
     ChartRenderer.locTimeline("chart-loc-timeline", data.timeline);
   })();

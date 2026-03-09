@@ -108,6 +108,13 @@
           <canvas id="chart-nonlang-donut"></canvas>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card__title">Non-Language File Sizes</div>
+        <div class="chart-container">
+          <canvas id="chart-nonlang-sizes"></canvas>
+        </div>
+      </div>
       {% endif %}
 
       <!-- LOC over time chart placeholder -->
@@ -620,6 +627,7 @@
 <script>
 window.__devstats_non_lang_types = {{ non_language_types | tojson }};
 window.__devstats_non_lang_exts = {{ non_language_extensions | tojson }};
+window.__devstats_non_lang_sizes = {{ non_language_sizes | tojson }};
 window.__devstats_lang_file_types = {{ language_file_types | tojson }};
 </script>
 

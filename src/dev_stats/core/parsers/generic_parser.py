@@ -117,6 +117,10 @@ class GenericParser(AbstractParser):
         lang, prefixes = self._lookup(path)
         encoding = detect_encoding(path)
         try:
+            size_bytes = path.stat().st_size
+        except OSError:
+            size_bytes = 0
+        try:
             source = path.read_text(encoding=encoding, errors="replace")
         except OSError:
             return FileReport(
@@ -126,6 +130,7 @@ class GenericParser(AbstractParser):
                 code_lines=0,
                 blank_lines=0,
                 comment_lines=0,
+                size_bytes=size_bytes,
             )
 
         loc: RawLOCCounts = count_loc(source, prefixes)
@@ -136,6 +141,7 @@ class GenericParser(AbstractParser):
             code_lines=loc.code,
             blank_lines=loc.blank,
             comment_lines=loc.comment,
+            size_bytes=size_bytes,
         )
 
     def _extract_classes(self, source: str, path: Path) -> list[ClassReport]:

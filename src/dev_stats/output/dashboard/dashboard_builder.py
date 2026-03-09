@@ -187,13 +187,19 @@ class DashboardBuilder(AbstractExporter):
 
         # Non-language files grouped by file extension
         non_lang_by_ext: dict[str, int] = {}
+        non_lang_size_by_ext: dict[str, int] = {}
         for f in report.files:
             if f.language in _NON_LANGUAGE_TYPES:
                 ext = f.path.suffix or f.path.name
                 non_lang_by_ext[ext] = non_lang_by_ext.get(ext, 0) + 1
+                non_lang_size_by_ext[ext] = non_lang_size_by_ext.get(ext, 0) + f.size_bytes
         ext_items = sorted(non_lang_by_ext.items(), key=lambda x: x[1], reverse=True)
         non_language_extensions: list[dict[str, object]] = [
             {"ext": ext, "count": count} for ext, count in ext_items
+        ]
+        size_items = sorted(non_lang_size_by_ext.items(), key=lambda x: x[1], reverse=True)
+        non_language_sizes: list[dict[str, object]] = [
+            {"ext": ext, "size": size} for ext, size in size_items
         ]
 
         # Language files grouped by (extension, language) for file-type donut
@@ -243,6 +249,7 @@ class DashboardBuilder(AbstractExporter):
             "languages": languages,
             "non_language_types": non_language_types,
             "non_language_extensions": non_language_extensions,
+            "non_language_sizes": non_language_sizes,
             "language_file_types": language_file_types,
             # Flags for conditional sections
             "has_commits": report.commits is not None,
